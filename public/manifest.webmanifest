@@ -1,0 +1,10 @@
+{
+  "name": "Pluoto",
+  "short_name": "Pluoto",
+  "description": "My people, around me.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#9fdcff",
+  "theme_color": "#9fdcff",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
