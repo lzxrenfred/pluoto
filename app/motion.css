@@ -1,0 +1,24 @@
+/* Shared calm motion primitives; grid translation is supplied by useGridMotion. */
+.world.camera-gliding { transition-property: transform; transition-timing-function: cubic-bezier(.22,.65,.3,1); }
+.inhabitant-pose { transform-origin:50% 100%; }
+.inhabitant-pose.is-resting svg { animation: quiet-breath 8s ease-in-out infinite; transform-origin:50% 100%; }
+.inhabitant-shadow { position:absolute; left:13px; bottom:2px; width:27px; height:9px; background:rgba(46,62,45,.18); border-radius:50%; filter:blur(2px); }
+.iso-plot[data-person="ren"] .iso-tree em { transform-origin:50% 100%; animation: canopy-sway 13s ease-in-out infinite; }
+.iso-character-button { transition:filter 180ms ease; }
+.iso-character-button:active { filter:brightness(.96); }
+.iso-plot-label { border:0; cursor:pointer; transition:background 180ms ease; }
+.iso-plot-label:hover,.iso-plot-label:focus-visible { background:#fff5e5; outline:2px solid rgba(65,89,61,.4); }
+.motion-bubble { animation:bubble-arrive 240ms ease-out; transition:opacity 240ms ease; }
+.motion-bubble.is-leaving { opacity:0; }
+.motion-bubble span { display:block; animation:bubble-content 240ms ease-out; }
+.cloud { animation-duration:65s; }
+.motion-paused .inhabitant-pose svg,.motion-paused .iso-tree em,.motion-paused .cloud { animation-play-state:paused; }
+@keyframes quiet-breath { 0%,35%,100%{transform:scaleY(1)} 55%{transform:scaleY(1.015)} }
+@keyframes canopy-sway { 0%,35%,100%{transform:rotate(0)} 60%{transform:rotate(1.2deg)} 80%{transform:rotate(-.5deg)} }
+@keyframes bubble-arrive { from{opacity:0;translate:0 3px} to{opacity:1;translate:0 0} }
+@keyframes bubble-content { from{opacity:0} to{opacity:1} }
+@media(prefers-reduced-motion:reduce) {
+  .world.camera-gliding { transition:none!important; }
+  .inhabitant-pose svg,.iso-tree em,.cloud,.motion-bubble,.motion-bubble span { animation:none!important; }
+  .motion-bubble,.iso-character-button,.iso-plot-label { transition:none!important; }
+}

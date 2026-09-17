@@ -8,28 +8,18 @@ export const DEMO_PEOPLE: Person[] = [
   },
   {
     id: "sarah", nickname: "Sarah", species: "rabbit", color: "#f7eee5", accent: "#f0a3a3", accessory: "tote",
-    plotX: 0, plotY: -1, ground: "earth", home: "cottage", scene: "sarah", bubble: "coffee later?",
+    plotX: 1, plotY: 0, ground: "stone", home: "studio", scene: "sarah", bubble: "coffee later?",
     bubbleCreatedAt: Date.now(), pills: ["quiet at first", "coffee", "film", "spontaneous plans"],
   },
   {
     id: "maya", nickname: "Maya", species: "cat", color: "#d9a16f", accent: "#fff5df", accessory: "glasses",
-    plotX: -1, plotY: 0, ground: "sand", home: "studio", scene: "maya",
+    plotX: 0, plotY: 1, ground: "grass", home: "cottage", scene: "maya",
     pills: ["photography", "travel", "R&B", "creative"],
   },
   {
     id: "wei", nickname: "Wei", species: "turtle", color: "#79a875", accent: "#dde7b8", accessory: "headphones",
-    plotX: 1, plotY: 0, ground: "stone", home: "cabin", scene: "wei", bubble: "coding…",
+    plotX: 1, plotY: 1, ground: "earth", home: "kiosk", scene: "wei", bubble: "coding…",
     bubbleCreatedAt: Date.now(), pills: ["developer", "gaming", "introvert", "startups"],
-  },
-  {
-    id: "james", nickname: "James", species: "penguin", color: "#31435a", accent: "#f8f2df", accessory: "cap",
-    plotX: -1, plotY: 1, ground: "grass", home: "tent", scene: "james",
-    pills: ["ambivert", "gym", "late-night hangs", "K-pop"],
-  },
-  {
-    id: "kai", nickname: "Kai", species: "bear", color: "#aa7457", accent: "#e7c5a8", accessory: "none",
-    plotX: 1, plotY: 1, ground: "earth", home: "kiosk", scene: "kai",
-    pills: ["coffee", "designer", "deep talks", "house"],
   },
 ];
 

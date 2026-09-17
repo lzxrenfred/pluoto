@@ -1,86 +1,163 @@
 "use client";
 
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type { Person } from "@/lib/types";
-import { PLOT_SIZE, TILE_SIZE, plotToWorld } from "@/lib/world";
+import {
+  PLOT_TILES,
+  WORLD_ORIGIN_X,
+  WORLD_ORIGIN_Y,
+  plotToGrid,
+  plotToWorld,
+  tileToIso,
+  depthOrder,
+} from "@/lib/world";
 import { Character } from "./Character";
+import { useGridMotion } from '@/lib/motion';
+import { MotionBubble } from './MotionBubble';
 
 type Props = {
   person: Person;
   arrangeMode: boolean;
   selected?: boolean;
+  motionPaused?: boolean;
+  onFocus: (person: Person) => void;
   onPlotPointerDown: (event: ReactPointerEvent, person: Person) => void;
   onCharacterClick: (person: Person) => void;
 };
 
-const objectPositions: Record<Person["scene"], { trees: [number, number][]; flowers: [number, number][] }> = {
-  ren: { trees: [[26, 41], [274, 228]], flowers: [[37, 248], [257, 47]] },
-  sarah: { trees: [[28, 46], [277, 70]], flowers: [[42, 250], [269, 234]] },
-  maya: { trees: [[37, 37], [262, 221]], flowers: [[260, 51], [82, 253]] },
-  wei: { trees: [[271, 48]], flowers: [[35, 240], [274, 248]] },
-  james: { trees: [[40, 43], [270, 62]], flowers: [[278, 251]] },
-  kai: { trees: [[32, 245]], flowers: [[270, 48], [276, 250]] },
-  new: { trees: [[35, 45], [272, 242]], flowers: [[263, 53]] },
+type Placement = {
+  kind: "tree" | "bush" | "flowers" | "lamp" | "bench" | "table" | "path";
+  tileX: number;
+  tileY: number;
+  variant?: "blossom" | "tall";
 };
 
-function Tree({ x, y, palm = false }: { x: number; y: number; palm?: boolean }) {
-  return <div className={`tree ${palm ? "palm" : ""}`} style={{ left: x, top: y }}><i/><b/><em/></div>;
+const placements: Record<Person["scene"], Placement[]> = {
+  ren: [
+    { kind: "path", tileX: 2, tileY: 2 }, { kind: "path", tileX: 2, tileY: 3 }, { kind: "path", tileX: 2, tileY: 4 },
+    { kind: "tree", tileX: 4, tileY: 0, variant: "tall" }, { kind: "tree", tileX: 0, tileY: 4 },
+    { kind: "bush", tileX: 4, tileY: 3 }, { kind: "flowers", tileX: 1, tileY: 4 },
+  ],
+  sarah: [
+    { kind: "path", tileX: 1, tileY: 2 }, { kind: "path", tileX: 1, tileY: 3 }, { kind: "path", tileX: 1, tileY: 4 },
+    { kind: "tree", tileX: 4, tileY: 0 }, { kind: "tree", tileX: 4, tileY: 4, variant: "tall" },
+    { kind: "lamp", tileX: 3, tileY: 3 }, { kind: "bench", tileX: 4, tileY: 2 },
+  ],
+  maya: [
+    { kind: "tree", tileX: 1, tileY: 1, variant: "blossom" }, { kind: "tree", tileX: 4, tileY: 4 },
+    { kind: "table", tileX: 2, tileY: 3 }, { kind: "bench", tileX: 3, tileY: 3 },
+    { kind: "flowers", tileX: 0, tileY: 4 }, { kind: "flowers", tileX: 4, tileY: 0 },
+  ],
+  wei: [
+    { kind: "tree", tileX: 4, tileY: 0, variant: "tall" }, { kind: "tree", tileX: 0, tileY: 4 },
+    { kind: "lamp", tileX: 4, tileY: 3 }, { kind: "bench", tileX: 2, tileY: 4 },
+    { kind: "bush", tileX: 0, tileY: 1 }, { kind: "flowers", tileX: 4, tileY: 1 },
+  ],
+  james: [
+    { kind: "tree", tileX: 0, tileY: 4 }, { kind: "bench", tileX: 3, tileY: 3 },
+    { kind: "lamp", tileX: 4, tileY: 1 }, { kind: "bush", tileX: 1, tileY: 0 },
+  ],
+  kai: [
+    { kind: "tree", tileX: 4, tileY: 0 }, { kind: "tree", tileX: 0, tileY: 4 },
+    { kind: "lamp", tileX: 4, tileY: 3 }, { kind: "bench", tileX: 2, tileY: 4 },
+  ],
+  new: [
+    { kind: "tree", tileX: 4, tileY: 0 }, { kind: "tree", tileX: 0, tileY: 4 },
+    { kind: "bush", tileX: 4, tileY: 3 }, { kind: "flowers", tileX: 1, tileY: 4 },
+  ],
+};
+
+const houseCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
+  ren: { tileX: 0, tileY: 0 },
+  sarah: { tileX: 1, tileY: 0 },
+  maya: { tileX: 2, tileY: 0 },
+  wei: { tileX: 0, tileY: 1 },
+  james: { tileX: 1, tileY: 0 },
+  kai: { tileX: 0, tileY: 1 },
+  new: { tileX: 1, tileY: 0 },
+};
+
+const characterCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
+  ren: { tileX: 3, tileY: 3 },
+  sarah: { tileX: 1, tileY: 3 },
+  maya: { tileX: 3, tileY: 4 },
+  wei: { tileX: 3, tileY: 2 },
+  james: { tileX: 3, tileY: 3 },
+  kai: { tileX: 3, tileY: 2 },
+  new: { tileX: 3, tileY: 3 },
+};
+
+function localPoint(tileX: number, tileY: number, elevation = 0) {
+  return tileToIso({ tileX, tileY }, elevation);
 }
 
-function Flowers({ x, y }: { x: number; y: number }) {
-  return <div className="flowers" style={{ left: x, top: y }}><i/><i/><i/></div>;
+function GridObject({ tileX, tileY, plotX, plotY, children, className = "", footprintX = 1, footprintY = 1 }: {
+  tileX: number; tileY: number; plotX: number; plotY: number; children: ReactNode; className?: string; footprintX?: number; footprintY?: number;
+}) {
+  const anchor = localPoint(tileX + footprintX / 2, tileY + footprintY / 2);
+  const depth = depthOrder(plotX * PLOT_TILES + tileX + footprintX / 2, plotY * PLOT_TILES + tileY + footprintY / 2);
+  return <div className={`iso-object ${className}`} style={{ left: anchor.x, top: anchor.y, zIndex: className === 'iso-path-anchor' ? 10 : depth }}>{children}</div>;
 }
 
-function House({ type }: { type: Person["home"] }) {
-  if (type === "tent") return <div className="tent"><i/><b/></div>;
-  if (type === "kiosk") return <div className="kiosk"><div className="awning"/><span>slow<br/>coffee</span><i/></div>;
-  return <div className={`house house-${type}`}><div className="roof"/><div className="wall"><span className="window"/><span className="door"/></div><i className="chimney"/></div>;
+function IsoHouse({ type }: { type: Person["home"] }) {
+  return <div className={`iso-house iso-house-${type}`}><div className="iso-house-roof"/><div className="iso-house-front"><i/><b/></div><div className="iso-house-side"/></div>;
 }
 
-function SceneProps({ scene }: { scene: Person["scene"] }) {
-  if (scene === "ren") return <><div className="mailbox">♥</div><div className="bench"><i/><i/></div></>;
-  if (scene === "maya") return <><div className="deckchair"><i/><b/></div><div className="tiny-pond"/></>;
-  if (scene === "wei") return <><div className="round-table">☕</div><div className="lamp">●</div></>;
-  if (scene === "james") return <><div className="campfire"><i/><b/>✦</div><div className="log-seat"/></>;
-  if (scene === "kai") return <><div className="string-lights">●　●　●　●</div><div className="chalkboard">today<br/>be soft</div></>;
-  if (scene === "sarah") return <><div className="picnic">☕</div><div className="hedge"/></>;
-  return <div className="bench"><i/><i/></div>;
+function EnvironmentObject({ placement }: { placement: Placement }) {
+  if (placement.kind === "tree") return <div className={`iso-tree ${placement.variant ? `iso-tree-${placement.variant}` : ""}`}><i/><b/><em/></div>;
+  if (placement.kind === "bush") return <div className="iso-bush"><i/><b/></div>;
+  if (placement.kind === "flowers") return <div className="iso-flowers"><i/><i/><i/></div>;
+  if (placement.kind === "lamp") return <div className="iso-lamp"><i/></div>;
+  if (placement.kind === "bench") return <div className="iso-bench"><i/><b/></div>;
+  if (placement.kind === "table") return <div className="iso-table"><i/></div>;
+  return <div className="iso-path-tile"/>;
 }
 
-export function Plot({ person, arrangeMode, selected, onPlotPointerDown, onCharacterClick }: Props) {
+export function Plot({ person, arrangeMode, selected, motionPaused, onFocus, onPlotPointerDown, onCharacterClick }: Props) {
   const world = plotToWorld(person);
-  const positions = objectPositions[person.scene];
+  const grid = plotToGrid(person);
+  const house = houseCells[person.scene];
+  const blocked = [...placements[person.scene].filter(p => p.kind !== 'path'), ...Array.from({length:4}, (_,i) => ({tileX:house.tileX+i%2,tileY:house.tileY+Math.floor(i/2)}))];
+  const character = useGridMotion(characterCells[person.scene], blocked, !arrangeMode && !motionPaused && ['ren','sarah'].includes(person.id), person.id === 'ren' ? 1500 : 8000);
+  const characterAnchor = localPoint(character.tileX + .5, character.tileY + .5);
   const style = {
-    width: PLOT_SIZE,
-    height: PLOT_SIZE,
-    transform: `translate3d(${world.x}px, ${world.y}px, 0)`,
-    "--tile-size": `${TILE_SIZE}px`,
+    left: WORLD_ORIGIN_X + world.x,
+    top: WORLD_ORIGIN_Y + world.y,
   } as CSSProperties;
 
   return (
     <div
-      className={`plot ground-${person.ground} ${arrangeMode && !person.owner ? "plot-movable" : ""} ${selected ? "plot-selected" : ""}`}
+      className={`iso-plot ${arrangeMode && !person.owner ? "plot-movable" : ""} ${selected ? "plot-selected" : ""}`}
       style={style}
       data-person={person.id}
       onPointerDown={(event) => onPlotPointerDown(event, person)}
     >
-      <div className="plot-grid" />
-      <div className="plot-edge plot-edge-top"/><div className="plot-edge plot-edge-right"/>
-      <div className="plot-label"><span>{person.nickname}</span>{person.owner && <b>YOU</b>}</div>
-      {positions.trees.map(([x, y], index) => <Tree key={`t${index}`} x={x} y={y} palm={person.scene === "maya" && index === 0}/>)}
-      {positions.flowers.map(([x, y], index) => <Flowers key={`f${index}`} x={x} y={y}/>)}
-      <House type={person.home}/>
-      <SceneProps scene={person.scene}/>
-      {person.bubble && <div className="bubble"><span>{person.bubble}</span></div>}
+      <GridObject tileX={house.tileX} tileY={house.tileY} footprintX={2} footprintY={2} plotX={person.plotX} plotY={person.plotY} className="iso-house-anchor">
+        <IsoHouse type={person.home}/>
+      </GridObject>
+      {placements[person.scene].map((placement, index) => <GridObject
+        key={`${placement.kind}-${placement.tileX}-${placement.tileY}-${index}`}
+        tileX={placement.tileX}
+        tileY={placement.tileY}
+        plotX={person.plotX}
+        plotY={person.plotY}
+        className={`iso-${placement.kind}-anchor`}
+      ><EnvironmentObject placement={placement}/></GridObject>)}
+      <button className="iso-plot-label" aria-label={`Focus ${person.nickname}'s Space`} onPointerDown={e => e.stopPropagation()} onClick={() => onFocus(person)} style={{ left: localPoint(.5, 4.5).x, top: localPoint(.5, 4.5).y, zIndex: 9000 }}><span>{person.nickname}</span>{person.owner && <b>YOU</b>}</button>
+      <MotionBubble text={person.bubble} style={{ left: characterAnchor.x, top: characterAnchor.y - 45, zIndex: 9500 }}/>
       <button
-        className={`character-button roam roam-${person.id}`}
+        className="iso-character-button"
+        style={{ left: characterAnchor.x, top: characterAnchor.y, zIndex: depthOrder(grid.tileX + character.tileX + .5, grid.tileY + character.tileY + .5) }}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => { event.stopPropagation(); onCharacterClick(person); }}
         aria-label={`Open ${person.nickname}'s card`}
       >
-        <Character species={person.species} color={person.color} accent={person.accent} accessory={person.accessory}/>
+        <span className="inhabitant-shadow"/>
+        <span className={`inhabitant-pose ${character.moving ? 'is-walking' : 'is-resting'}`} style={{display:'block', transform:`translateY(${-character.lift}px) scaleX(${character.headingX-character.headingY < 0 ? -1 : 1})`}}>
+          <Character className="plane-character" species={person.species} color={person.color} accent={person.accent} accessory={person.accessory} size={48}/>
+        </span>
       </button>
-      {arrangeMode && !person.owner && <div className="drag-handle">hold + move</div>}
+      {arrangeMode && !person.owner && <div className="iso-drag-handle">move</div>}
     </div>
   );
 }

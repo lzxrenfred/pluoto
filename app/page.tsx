@@ -8,7 +8,7 @@ import { World } from "@/components/World";
 import { INITIAL_STATE } from "@/lib/demo";
 import type { AppState, Person } from "@/lib/types";
 
-const STORAGE_KEY = "pluoto-state-v1";
+const STORAGE_KEY = "pluoto-state-v2-isometric";
 
 export default function Home() {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
@@ -85,10 +85,10 @@ export default function Home() {
       {sheet === "profile" && <ProfileMenu state={state} onCustomize={() => setSheet("customize")} onBubble={() => setSheet("bubble")} onClose={() => setSheet(null)}/>} 
     </header>
 
-    <World people={state.people} arrangeMode={arrangeMode} onPeopleChange={updatePeople} onCharacterClick={setSelected}/>
+    <World people={state.people} arrangeMode={arrangeMode} motionPaused={!!selected || !!sheet || showWelcome} onPeopleChange={updatePeople} onCharacterClick={setSelected}/>
 
     <nav className="action-dock">
-      <button onClick={() => setSheet("friends")}><Plus size={19}/><span>Add friend</span>{state.people.length === 6 && <i/>}</button>
+      <button onClick={() => setSheet("friends")}><Plus size={19}/><span>Add friend</span>{state.people.length === 4 && <i/>}</button>
       <button className={arrangeMode ? "active" : ""} onClick={() => setArrangeMode((value) => !value)}>{arrangeMode ? <Check size={18}/> : <Move size={18}/>}<span>{arrangeMode ? "Done" : "Arrange"}</span></button>
     </nav>
 
