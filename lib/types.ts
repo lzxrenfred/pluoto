@@ -21,9 +21,11 @@ export type Person = PlotPosition & {
 };
 
 export type BubbleEntry = { id: string; text: string; createdAt: number; expiredAt?: number };
+export type GuestIdentity = { id: string; nickname: string; species: Species; color: string; joinedAt: number };
 
 export type AppState = {
   people: Person[];
+  guests: GuestIdentity[];
   bubbleLog: BubbleEntry[];
   blocked: string[];
   completedOnboarding: boolean;

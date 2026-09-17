@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, ChevronLeft, Clock3, Copy, QrCode, ShieldOff, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, Clock3, Copy, QrCode, Share2, ShieldOff, Trash2, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import type { AppState, BubbleEntry, Ground, Person, Species } from "@/lib/types";
+import type { AppState, BubbleEntry, GuestIdentity, Ground, Person, Species } from "@/lib/types";
 import { PILL_GROUPS } from "@/lib/demo";
 import { Character } from "./Character";
 
-export function PersonSheet({ person, owner, onClose, onRemove, onBlock }: { person: Person; owner: Person; onClose: () => void; onRemove: () => void; onBlock: () => void }) {
+export function PersonSheet({ person, owner, canManage=true, onClose, onRemove, onBlock }: { person: Person; owner: Person; canManage?:boolean; onClose: () => void; onRemove: () => void; onBlock: () => void }) {
   const shared = person.pills.filter((pill) => owner.pills.includes(pill));
   return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet person-sheet" onPointerDown={(e) => e.stopPropagation()}>
     <button className="sheet-close" onClick={onClose}><X size={19}/></button>
@@ -15,7 +15,7 @@ export function PersonSheet({ person, owner, onClose, onRemove, onBlock }: { per
     <p className="eyebrow">IN YOUR PLANE</p><h2>{person.nickname}</h2>
     {person.bubble && <div className="sheet-bubble">“{person.bubble}”</div>}
     <div className="pills">{person.pills.map((pill) => <span className={shared.includes(pill) ? "shared" : ""} key={pill}>{shared.includes(pill) && "✦ "}{pill}</span>)}</div>
-    {!person.owner && <details className="friend-actions"><summary>Friend settings</summary><div><button onClick={onRemove}><Trash2 size={16}/> Remove from Plane</button><button className="danger" onClick={onBlock}><ShieldOff size={16}/> Block {person.nickname}</button></div></details>}
+    {canManage && !person.owner && <details className="friend-actions"><summary>Friend settings</summary><div><button onClick={onRemove}><Trash2 size={16}/> Remove from Plane</button><button className="danger" onClick={onBlock}><ShieldOff size={16}/> Block {person.nickname}</button></div></details>}
   </section></div>;
 }
 
@@ -57,6 +57,38 @@ export function FriendSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (p
     {tab === "add" && <div className="add-panel">{!preview ? <><button className="scan-button"><QrCode/> Scan their code</button><div className="or"><i/>or<i/></div><label>Short code<div><input value={code} placeholder="e.g. LIO-204" onChange={(e) => setCode(e.target.value.toUpperCase())}/><button onClick={() => setPreview(true)} disabled={code.length < 3}>Preview</button></div></label></> : <div className="request-preview"><Character species={candidate.species} color={candidate.color} accent={candidate.accent} accessory={candidate.accessory} size={100}/><h3>{candidate.nickname}</h3><div className="mini-plot-card">5 × 5 sand plot · blue studio</div><div className="pills">{candidate.pills.map((pill) => <span key={pill}>{pill}</span>)}</div><button className="primary wide" onClick={() => onAdd(candidate)}>Send request & demo accept</button><small>In the live flow, Lio must accept before either of you can place a Plot.</small></div>}</div>}
     {tab === "requests" && <div className="request-item"><Character species="dog" color="#6f8b65" accent="#ead6bd" accessory="none" size={76}/><div><strong>Noa</strong><span>coffee · student · quiet at first</span></div><button className="icon-accept" aria-label="Accept"><Check/></button><button className="icon-decline" aria-label="Decline"><X/></button></div>}
   </section></div>;
+}
+
+const guestSpecies=["fox","rabbit","cat","turtle"] as const satisfies readonly Species[];
+type GuestSpecies=(typeof guestSpecies)[number];
+const guestColors:Record<GuestSpecies,string>={fox:"#e8794d",rabbit:"#f7eee5",cat:"#d9a16f",turtle:"#79a875"};
+
+export function GuestJoin({planeName,onJoin}:{planeName:string;onJoin:(draft:{nickname:string;species:Species;color:string})=>void}) {
+  const [nickname,setNickname]=useState("");
+  const [animal,setAnimal]=useState<GuestSpecies>("fox");
+  return <div className="guest-gate"><section className="guest-card">
+    <p className="eyebrow">YOU’RE INVITED</p><h1>Visit {planeName}</h1><p>Choose a little visitor identity. No account, email or password needed.</p>
+    <label>Your nickname<input autoFocus maxLength={18} value={nickname} placeholder="e.g. Ari" onChange={event=>setNickname(event.target.value)}/></label>
+    <fieldset><legend>Starter animal <span>optional</span></legend><div className="guest-species">{guestSpecies.map(item=><button type="button" key={item} className={animal===item?"selected":""} onClick={()=>setAnimal(item)}><Character species={item} color={guestColors[item]} accent="#fff2df" size={62}/><span>{item}</span></button>)}</div></fieldset>
+    <button className="primary wide" disabled={!nickname.trim()} onClick={()=>onJoin({nickname:nickname.trim(),species:animal,color:guestColors[animal]})}>Enter the Plane</button>
+    <small>An anonymous identity is remembered only on this device.</small>
+  </section></div>;
+}
+
+export function InviteSheet({inviteUrl,mode,onClose}:{inviteUrl:string;mode:'realtime'|'local';onClose:()=>void}) {
+  const [copied,setCopied]=useState(false);
+  const copy=async()=>{await navigator.clipboard?.writeText(inviteUrl);setCopied(true);setTimeout(()=>setCopied(false),1400);};
+  const share=async()=>{if(navigator.share)await navigator.share({title:"Visit my Pluoto Plane",text:"Come visit my little Plane on Pluoto.",url:inviteUrl});else await copy();};
+  return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet invite-sheet" onPointerDown={event=>event.stopPropagation()}>
+    <button className="sheet-close" onClick={onClose}><X/></button><p className="eyebrow">SHARE YOUR PLANE</p><h2>Invite a guest</h2><p>They’ll choose a nickname and starter animal, then enter without creating an account.</p>
+    <div className="qr"><QRCodeSVG value={inviteUrl} size={180} fgColor="#14283c" bgColor="#fffdf7" level="M"/></div>
+    <div className="invite-actions"><button className="primary" onClick={copy}>{copied?<Check size={18}/>:<Copy size={18}/>} {copied?"Copied":"Copy invite"}</button><button className="secondary" onClick={share}><Share2 size={18}/> Share</button></div>
+    <div className="invite-link">{inviteUrl}</div><small>{mode==='realtime'?"Realtime Plane · guest changes appear across devices":"Local preview mode · realtime sync works between tabs on this device"}</small>
+  </section></div>;
+}
+
+export function GuestMenu({guest,mode,onClose}:{guest:GuestIdentity;mode:'realtime'|'local';onClose:()=>void}) {
+  return <div className="profile-popover guest-profile"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={guest.species} color={guest.color} accent="#fff2df" size={65}/><div><strong>{guest.nickname}</strong><span>ANONYMOUS GUEST</span></div></div><p>You’re visiting this Plane without an account.</p><div className="profile-stats"><span><b>{mode==='realtime'?"Live":"Local"}</b> connection</span></div></div>;
 }
 
 export function ProfileMenu({ state, onCustomize, onBubble, onClose }: { state: AppState; onCustomize: () => void; onBubble: () => void; onClose: () => void }) {

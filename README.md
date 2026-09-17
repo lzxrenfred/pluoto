@@ -21,7 +21,8 @@ Open `http://localhost:3000`. The app starts with a four-person demo Plane; choo
 - Representative calm grid walking for Ren and Sarah, subtle idle and canopy movement, bubble fades, and Space-label camera focus
 - Character cards with Pills and shared-Pill highlighting
 - Four-step identity/Character/Pills/Plot customization flow with 100+ Pills and no selection cap
-- QR plus short-code friend flow, request preview, request acceptance UI, and placement hand-off
+- Shareable capability invite URL with a functional QR code and account-free guest entry
+- Anonymous guest identity remembered per device, with host/guest live presence
 - 24-hour Bubbles, replacement, expiry, and private owner-only Bubble Log
 - Remove/block controls and no public directory/contact information
 - `localStorage` persistence plus an installable manifest and offline shell cache
@@ -47,8 +48,14 @@ Grid tests cover exact alignment and uniqueness for 1, 5, 10, and 25 Plots.
 
 Ren and Sarah take an adjacent, unoccupied tile step after a staggered initial pause, then rest for roughly 15–22 seconds. Click a Space name to focus; Reset view returns to the whole Plane. Open a Character card or enter Arrange to pause roaming. Reduced-motion disables autonomous movement, ambient animation, and camera transitions; hidden tabs suspend walking. `lib/motion.ts` provides shared timing, easing, walkable-neighbor selection, and logical poses/headings for future renderers. Current SVG placeholders demonstrate horizontal facing only; full directional poses await the approved asset implementation.
 
-## 3D rendering review slice
+## 3D Plane
 
-The active Plane now uses one React Three Fiber canvas. `lib/render3d.ts` maps unchanged logical tile coordinates to scene units. A fixed 45° azimuth / 30° elevation orthographic camera reproduces the approved 2:1 diamond projection. Terrain contains the existing owned cells and exterior-only side walls; no internal slabs. Models are a single owner-Space house, tree, shrub and toy Character. Other inhabitants retain HTML/SVG placeholders for their existing card interactions. Remaining environment assets are deferred, not deleted from placement data.
+The active Plane uses one React Three Fiber canvas. `lib/render3d.ts` maps unchanged logical tile coordinates to scene units. A fixed 45° azimuth / 30° elevation orthographic camera reproduces the approved 2:1 diamond projection. Terrain contains the existing owned cells and exterior-only side walls; no internal slabs. All four existing Spaces now use the same warm low-poly buildings, vegetation, props and toy-like Character system. Product controls, labels, QR sharing and inspection sheets remain React/HTML outside the canvas.
 
-The scene uses shared terrain geometry/materials, demand rendering, capped pixel ratio and a single 1024px shadow map. Product UI and Bubble text remain HTML. Pan, zoom, reset, Space focus and collision-checked arrangement remain available. Motion code is retained but autonomous Character animation is intentionally inactive in this visual slice. The pre-3D implementation is saved in Git commit `13ebff9`.
+The scene uses shared terrain geometry/materials, demand rendering, capped pixel ratio and restrained shadows. Pan, zoom, reset, Space focus, Character inspection and collision-checked arrangement remain available. Motion code is retained but autonomous Character animation is intentionally inactive. The pre-3D implementation is saved in Git commit `13ebff9`; the approved single-Space R3F checkpoint is `62bfd98`.
+
+## Realtime and private preview setup
+
+The sharing seam lives in `lib/plane-store.ts`. If no credentials are present, Pluoto uses `localStorage` plus `BroadcastChannel`, which provides a complete same-device host/guest mock across tabs. To enable cross-device persistence, copy `.env.example` to `.env.local`, provide a Supabase URL and publishable key, enable Anonymous Sign-Ins, and run `supabase/schema.sql` in the project SQL editor. The schema grants access only after an anonymous user presents the separate secret carried by the invite URL and is added to that Plane’s membership table.
+
+The production build is a static export, so it can be placed behind any private-preview host. No remote preview is required for local development, and no credentials are committed to the repository.

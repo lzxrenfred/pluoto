@@ -25,6 +25,7 @@ export const DEMO_PEOPLE: Person[] = [
 
 export const INITIAL_STATE: AppState = {
   people: DEMO_PEOPLE,
+  guests: [],
   bubbleLog: [],
   blocked: [],
   completedOnboarding: false,

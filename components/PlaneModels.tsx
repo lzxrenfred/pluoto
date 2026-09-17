@@ -25,8 +25,29 @@ const gableShape = new Shape();
 gableShape.moveTo(-.81,0); gableShape.lineTo(.81,0); gableShape.lineTo(0,.5); gableShape.closePath();
 const gableGeometry = new ExtrudeGeometry(gableShape,{depth:1.48,steps:1,curveSegments:1,bevelEnabled:false});
 gableGeometry.computeVertexNormals();
+
+function StudioModel() {
+  return <group>
+    <Block position={[0,.07,0]} size={[1.78,.14,1.64]} material="stone" radius={.055}/><Block position={[-.22,.52,0]} size={[1.25,.9,1.45]} material="wall" radius={.045}/><Block position={[-.22,1,0]} size={[1.38,.12,1.58]} material="stoneWarm" radius={.025}/>
+    <Block position={[.58,.52,-.48]} size={[.22,1.02,.22]} material="wallShade" radius={.035}/><Block position={[.58,.96,.12]} size={[.22,.14,1.28]} material="wallShade" radius={.025}/><Block position={[.58,.49,.69]} size={[.48,.74,.06]} material="glass" radius={.025}/>
+    <Block position={[-.28,.51,.735]} size={[.55,.42,.045]} material="glass" radius={.025}/><Block position={[-.28,.51,.768]} size={[.045,.42,.018]} material="wall" radius={.01}/><Block position={[.36,.4,.735]} size={[.3,.64,.06]} material="darkWood" radius={.035}/><Block position={[.36,.06,.91]} size={[.48,.12,.3]} material="stone" radius={.04}/>
+  </group>;
+}
+function KioskModel() {
+  return <group>
+    <Block position={[0,.07,0]} size={[1.7,.14,1.5]} material="stoneWarm" radius={.055}/><Block position={[0,.48,-.05]} size={[1.35,.82,1.08]} material="dark" radius={.045}/><Block position={[0,.94,-.05]} size={[1.55,.14,1.28]} material="wall" radius={.035}/>
+    <Block position={[0,.58,.515]} size={[1.12,.4,.055]} material="wallShade" radius={.02}/><Block position={[0,.43,.59]} size={[1.22,.18,.38]} material="wood" radius={.035}/><Block position={[-.45,.2,.45]} size={[.1,.42,.1]} material="darkWood" radius={.025}/><Block position={[.45,.2,.45]} size={[.1,.42,.1]} material="darkWood" radius={.025}/>
+    <Pebble position={[.28,.58,.71]} scale={[.12,.05,.12]} material="white"/><Block position={[.28,.69,.71]} size={[.1,.2,.1]} material="white" radius={.025}/>
+  </group>;
+}
+function TentModel() {
+  return <group><Block position={[0,.05,0]} size={[1.7,.1,1.5]} material="stoneWarm" radius={.05}/><mesh position={[0,.61,0]} rotation={[0,Math.PI/4,0]} material={materials.coral} castShadow receiveShadow><coneGeometry args={[.88,1.2,4]}/></mesh><mesh position={[0,.46,.48]} rotation={[Math.PI/2,0,0]} material={materials.darkWood} castShadow><coneGeometry args={[.25,.5,3]}/></mesh></group>;
+}
 export function HouseModel({home}: {home:Person['home']}) {
-  const roofMaterial:MaterialName = home==='cabin'?'leafDark':home==='studio'?'glass':'roof';
+  if(home==='studio') return <StudioModel/>;
+  if(home==='kiosk') return <KioskModel/>;
+  if(home==='tent') return <TentModel/>;
+  const roofMaterial:MaterialName = home==='cabin'?'leafDark':'roof';
   const roofAngle=Math.atan(.5/.81);
   return <group>
     <Block position={[0,.07,0]} size={[1.78,.14,1.64]} material="stone" radius={.055}/>
@@ -96,6 +117,21 @@ export function BenchModel() {
     <Block position={[-.27,.16,.02]} size={[.09,.34,.09]} material="darkWood" radius={.025}/><Block position={[.27,.16,.02]} size={[.09,.34,.09]} material="darkWood" radius={.025}/>
   </group>;
 }
+export function LampModel() {
+  return <group>
+    <mesh position={[0,.38,0]} material={materials.dark} castShadow><cylinderGeometry args={[.035,.055,.76,8]}/></mesh>
+    <Block position={[.12,.75,0]} size={[.28,.055,.055]} material="dark" radius={.018}/>
+    <Pebble position={[.24,.68,0]} scale={[.12,.14,.12]} material="flowerGold"/>
+    <mesh position={[.24,.7,0]} material={materials.wallShade} castShadow><sphereGeometry args={[.15,12,8,0,Math.PI*2,0,Math.PI/2]}/></mesh>
+  </group>;
+}
+export function TableModel() {
+  return <group>
+    <Block position={[0,.42,0]} size={[.72,.13,.55]} material="wood" radius={.05}/>
+    {[-.25,.25].flatMap(x=>[-.17,.17].map(z=><Block key={`${x}-${z}`} position={[x,.2,z]} size={[.08,.4,.08]} material="darkWood" radius={.02}/>))}
+    <Pebble position={[.15,.52,.02]} scale={[.1,.055,.1]} material="white"/><Block position={[.15,.6,.02]} size={[.08,.15,.08]} material="white" radius={.025}/>
+  </group>;
+}
 export function MailboxModel() {
   return <group scale={.82}>
     <Block position={[0,.3,0]} size={[.1,.6,.1]} material="darkWood" radius={.025}/>
@@ -113,17 +149,32 @@ export function GroundDetailsModel() {
   </group>;
 }
 
-/** One refined toy fox. Other species intentionally remain placeholders. */
-export function CharacterModel({person}: {person:Person}) {
+function Face({accent}:{accent:string}) {
+  return <>
+    <Pebble position={[-.11,.66,.277]} scale={[.025,.034,.018]} material="dark"/><Pebble position={[.11,.66,.277]} scale={[.025,.034,.018]} material="dark"/>
+    <Pebble position={[-.115,.57,.253]} scale={[.14,.11,.075]} color={accent}/><Pebble position={[.115,.57,.253]} scale={[.14,.11,.075]} color={accent}/><Pebble position={[0,.565,.304]} scale={[.038,.03,.025]} material="dark"/>
+  </>;
+}
+function TurtleCharacter({person}:{person:Person}) {
   return <group rotation={[0,.28,0]} scale={.82}>
+    <Pebble position={[0,.31,-.02]} scale={[.34,.25,.3]} color={person.color}/><Pebble position={[0,.34,-.12]} scale={[.28,.2,.27]} color={person.accent}/><Pebble position={[0,.33,.31]} scale={[.18,.17,.18]} color={person.color}/>
+    {[-1,1].map(side=><group key={side}><Pebble position={[side*.25,.12,.13]} scale={[.12,.075,.14]} color={person.color}/><Pebble position={[side*.24,.14,-.2]} scale={[.11,.07,.13]} color={person.color}/></group>)}
+    <Pebble position={[-.065,.37,.47]} scale={[.02,.028,.015]} material="dark"/><Pebble position={[.065,.37,.47]} scale={[.02,.028,.015]} material="dark"/>
+  </group>;
+}
+/** One shared toy construction with small species-specific silhouettes. */
+export function CharacterModel({person}: {person:Person}) {
+  if(person.species==='turtle') return <TurtleCharacter person={person}/>;
+  const rabbit=person.species==='rabbit';
+  const cat=person.species==='cat';
+  return <group rotation={[0,.28,0]} scale={rabbit?.78:.82}>
     <Pebble position={[0,.3,0]} scale={[.25,.29,.2]} color={person.color}/><Pebble position={[0,.31,.17]} scale={[.17,.2,.08]} color={person.accent}/><Pebble position={[0,.66,.035]} scale={[.32,.29,.25]} color={person.color}/>
     {[-1,1].map(side=><group key={side}>
-      <mesh position={[side*.19,.94,.015]} rotation={[0,0,side*-.12]} castShadow><coneGeometry args={[.135,.3,5]}/><meshStandardMaterial color={person.color} roughness={.9}/></mesh>
-      <mesh position={[side*.19,.935,.055]} rotation={[0,0,side*-.12]} castShadow><coneGeometry args={[.072,.17,5]}/><primitive object={materials.coral} attach="material"/></mesh>
-      <Pebble position={[side*.115,.69,.266]} scale={[.027,.04,.018]} material="dark"/><Pebble position={[side*.13,.095,.1]} scale={[.115,.085,.15]} color={person.accent}/><Pebble position={[side*.2,.31,.08]} scale={[.075,.15,.09]} color={person.color}/><Pebble position={[side*.115,.57,.253]} scale={[.14,.11,.075]} color={person.accent}/>
+      {rabbit?<><Pebble position={[side*.17,1.01,.02]} scale={[.105,.32,.085]} color={person.color}/><Pebble position={[side*.17,1.03,.09]} scale={[.052,.23,.04]} material="coral"/></>:<><mesh position={[side*.19,.94,.015]} rotation={[0,0,side*-.12]} castShadow><coneGeometry args={[cat?.11:.135,cat?.24:.3,5]}/><meshStandardMaterial color={person.color} roughness={.9}/></mesh><mesh position={[side*.19,.935,.055]} rotation={[0,0,side*-.12]} castShadow><coneGeometry args={[cat?.055:.072,cat?.13:.17,5]}/><primitive object={materials.coral} attach="material"/></mesh></>}
+      <Pebble position={[side*.13,.095,.1]} scale={[.115,.085,.15]} color={person.accent}/><Pebble position={[side*.2,.31,.08]} scale={[.075,.15,.09]} color={person.color}/>
     </group>)}
-    <Pebble position={[0,.565,.304]} scale={[.038,.03,.025]} material="dark"/><Pebble position={[-.11,.66,.277]} scale={[.025,.034,.018]} material="dark"/><Pebble position={[.11,.66,.277]} scale={[.025,.034,.018]} material="dark"/>
-    <Pebble position={[.23,.25,-.13]} scale={[.16,.25,.13]} color={person.color}/><Pebble position={[.32,.42,-.18]} scale={[.14,.2,.12]} color={person.accent}/>
-    {person.accessory !== 'none'&&<mesh position={[0,.46,.015]} rotation={[Math.PI/2,0,0]} castShadow><torusGeometry args={[.19,.027,8,20]}/><primitive object={materials.coral} attach="material"/></mesh>}
+    <Face accent={person.accent}/>
+    {rabbit?<Pebble position={[.2,.28,-.18]} scale={[.11,.11,.11]} color={person.accent}/>:<><Pebble position={[.23,.25,-.13]} scale={[cat?.1:.16,cat?.29:.25,.11]} color={person.color}/><Pebble position={[.32,.42,-.18]} scale={[cat?.08:.14,cat?.19:.2,.1]} color={person.accent}/></>}
+    {person.accessory!=='none'&&<mesh position={[0,.46,.015]} rotation={[Math.PI/2,0,0]} castShadow><torusGeometry args={[.19,.027,8,20]}/><primitive object={materials.coral} attach="material"/></mesh>}
   </group>;
 }

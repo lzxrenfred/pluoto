@@ -9,10 +9,9 @@ import type { Person } from '@/lib/types';
 import { spaceTiles, isSlotFree } from '@/lib/world';
 import { CAMERA_OFFSET, TERRAIN_DEPTH, spaceAnchor, dragToSpace } from '@/lib/render3d';
 import { houseCells, characterCells, placements, type Placement } from './Plot';
-import { Character } from './Character';
-import { BenchModel, CharacterModel, FlowerPatchModel, GroundDetailsModel, HouseModel, MailboxModel, PathModel, ShrubModel, TreeModel } from './PlaneModels';
+import { BenchModel, CharacterModel, FlowerPatchModel, GroundDetailsModel, HouseModel, LampModel, MailboxModel, PathModel, ShrubModel, TableModel, TreeModel } from './PlaneModels';
 
-type Props = {people:Person[]; arrangeMode:boolean; motionPaused?:boolean; onPeopleChange:(people:Person[])=>void; onCharacterClick:(person:Person)=>void};
+type Props = {people:Person[]; arrangeMode:boolean; motionPaused?:boolean; showOwnerBadge?:boolean; onPeopleChange:(people:Person[])=>void; onCharacterClick:(person:Person)=>void};
 type Command = {id:number; kind:'reset'|'zoom'|'focus'; amount?:number; person?:Person};
 const floor = new Plane(new Vector3(0,1,0),0);
 const palette = {grass:'#aecb82',stone:'#dfddd5',earth:'#dabb8e',sand:'#ebdcc2'};
@@ -24,6 +23,8 @@ function EnvironmentModel({placement,index}:{placement:Placement;index:number}) 
   if(placement.kind==='path') return <PathModel variant={index}/>;
   if(placement.kind==='bench') return <BenchModel/>;
   if(placement.kind==='mailbox') return <MailboxModel/>;
+  if(placement.kind==='lamp') return <LampModel/>;
+  if(placement.kind==='table') return <TableModel/>;
   return null;
 }
 
@@ -47,7 +48,7 @@ function CameraRig({command, arranging}:{command:Command; arranging:boolean}) {
   return <OrbitControls ref={ref} makeDefault enableRotate={false} enableDamping={false} enabled={!arranging} screenSpacePanning minZoom={18} maxZoom={110} mouseButtons={{LEFT:2,MIDDLE:1,RIGHT:2}} touches={{ONE:2,TWO:2}}/>;
 }
 
-function Scene({people,arrangeMode,onPeopleChange,onCharacterClick,command,onFocus}:Props & {command:Command;onFocus:(p:Person)=>void}) {
+function Scene({people,arrangeMode,showOwnerBadge=true,onPeopleChange,onCharacterClick,command,onFocus}:Props & {command:Command;onFocus:(p:Person)=>void}) {
   const drag = useRef<{person:Person;start:Vector3;target:Person}|null>(null);
   const [ghost,setGhost] = useState<Person|null>(null);
   const {gl} = useThree();
@@ -57,7 +58,6 @@ function Scene({people,arrangeMode,onPeopleChange,onCharacterClick,command,onFoc
   useEffect(()=>()=>{Object.values(materials).forEach(m=>m.dispose());planeGeometry.dispose();sideGeometry.dispose();},[materials,planeGeometry,sideGeometry]);
   const cells = spaceTiles(people);
   const occupied = new Set(cells.map(t=>`${t.tileX},${t.tileY}`));
-  const sample = people.find(p=>p.id==='ren') ?? people.find(p=>p.owner) ?? people[0];
   const valid = ghost ? isSlotFree(ghost,people,people.findIndex(p=>p.id===ghost.id)) : false;
   const move = (e:ThreeEvent<PointerEvent>) => {
     if(!drag.current) return;
@@ -85,17 +85,16 @@ function Scene({people,arrangeMode,onPeopleChange,onCharacterClick,command,onFoc
         {[[0,-1],[1,0],[0,1],[-1,0]].map(([dx,dz],i)=>!occupied.has(`${x+dx},${z+dz}`)&&<mesh key={i} geometry={sideGeometry} position={[x+.5+dx*.5,-TERRAIN_DEPTH/2,z+.5+dz*.5]} rotation={[0,dx?Math.PI/2:0,0]} castShadow receiveShadow><meshStandardMaterial color="#b49170" roughness={1}/></mesh>)}
       </group>)}
     </group>
-    {sample && <>
-      <group position={spaceAnchor(sample,{tileX:0,tileY:0},0)}><GroundDetailsModel/></group>
-      <group position={spaceAnchor(sample,houseCells[sample.scene],2)}><HouseModel home={sample.home}/></group>
-      {placements[sample.scene].map((placement,index)=><group key={`${placement.kind}-${placement.tileX}-${placement.tileY}-${index}`} position={spaceAnchor(sample,placement)}><EnvironmentModel placement={placement} index={index}/></group>)}
-      <group position={spaceAnchor(sample,characterCells[sample.scene])} onClick={e=>{e.stopPropagation();onCharacterClick(sample);}} onPointerOver={()=>{gl.domElement.style.cursor='pointer';}} onPointerOut={()=>{gl.domElement.style.cursor='grab';}}><CharacterModel person={sample}/></group>
-    </>}
+    {people.map(person=><group key={`world-${person.id}`}>
+      <group position={spaceAnchor(person,{tileX:0,tileY:0},0)}><GroundDetailsModel/></group>
+      <group position={spaceAnchor(person,houseCells[person.scene],2)}><HouseModel home={person.home}/></group>
+      {placements[person.scene].map((placement,index)=><group key={`${placement.kind}-${placement.tileX}-${placement.tileY}-${index}`} position={spaceAnchor(person,placement)}><EnvironmentModel placement={placement} index={index}/></group>)}
+      <group position={spaceAnchor(person,characterCells[person.scene])} onClick={e=>{e.stopPropagation();onCharacterClick(person);}} onPointerOver={()=>{gl.domElement.style.cursor='pointer';}} onPointerOut={()=>{gl.domElement.style.cursor='grab';}}><CharacterModel person={person}/></group>
+    </group>)}
     <ContactShadows position={[5,.01,5]} scale={14} opacity={.24} blur={2.2} far={3.2} resolution={512} frames={1} color="#6d6655"/>
     {people.map(person=><group key={person.id}>
-      <Html position={spaceAnchor(person,{tileX:.0,tileY:4})} center zIndexRange={[30,10]}><button className="space3d-label" onClick={()=>onFocus(person)}>{person.nickname}{person.owner?' · YOU':''}</button></Html>
-      {person.id!==sample?.id && <Html position={spaceAnchor(person,characterCells[person.scene])} center zIndexRange={[30,10]}><button className="space3d-character" aria-label={`Open ${person.nickname}'s card`} onClick={()=>onCharacterClick(person)}><Character species={person.species} color={person.color} accent={person.accent} accessory={person.accessory} size={36}/></button></Html>}
-      {person.id===sample?.id && <Html position={spaceAnchor(person,characterCells[person.scene])} center zIndexRange={[30,10]}><button className="space3d-accessible" aria-label={`Open ${person.nickname}'s card`} onClick={()=>onCharacterClick(person)}>Open {person.nickname}'s card</button></Html>}
+      <Html position={spaceAnchor(person,{tileX:.0,tileY:4})} center zIndexRange={[30,10]}><button className="space3d-label" onClick={()=>onFocus(person)}>{person.nickname}{showOwnerBadge&&person.owner?' · YOU':''}</button></Html>
+      <Html position={spaceAnchor(person,characterCells[person.scene])} center zIndexRange={[30,10]}><button className="space3d-accessible" aria-label={`Open ${person.nickname}'s card`} onClick={()=>onCharacterClick(person)}>Open {person.nickname}'s card</button></Html>
       {person.bubble && <Html position={spaceAnchor(person,characterCells[person.scene]).map((v,i)=>i===1?v+.95:v) as [number,number,number]} center zIndexRange={[35,15]}><div className="space3d-bubble">{person.bubble}</div></Html>}
     </group>)}
     {ghost && <mesh position={spaceAnchor(ghost,{tileX:0,tileY:0},5).map((v,i)=>i===1?.025:v) as [number,number,number]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshBasicMaterial color={valid?'#91c8a4':'#dc8273'} transparent opacity={.5} depthWrite={false}/></mesh>}

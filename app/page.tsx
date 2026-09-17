@@ -1,52 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Check, Move, Plus, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, Move, Share2, Sparkles } from "lucide-react";
 import { Character } from "@/components/Character";
-import { BubbleSheet, CustomizeFlow, FriendSheet, PersonSheet, ProfileMenu } from "@/components/Sheets";
+import { BubbleSheet, CustomizeFlow, GuestJoin, GuestMenu, InviteSheet, PersonSheet, ProfileMenu } from "@/components/Sheets";
 import dynamic from 'next/dynamic';
 const World = dynamic(() => import('@/components/World3D'), {ssr:false});
-import { INITIAL_STATE } from "@/lib/demo";
-import type { AppState, Person } from "@/lib/types";
-
-const STORAGE_KEY = "pluoto-state-v2-isometric";
+import { usePlane } from "@/lib/use-plane";
+import type { Person } from "@/lib/types";
 
 export default function Home() {
-  const [state, setState] = useState<AppState>(INITIAL_STATE);
-  const [hydrated, setHydrated] = useState(false);
+  const {state,setState,hydrated,inviteUrl,viewer,needsGuestJoin,joinGuest,mode}=usePlane();
   const [arrangeMode, setArrangeMode] = useState(false);
   const [selected, setSelected] = useState<Person | null>(null);
-  const [sheet, setSheet] = useState<"friends" | "bubble" | "customize" | "profile" | null>(null);
+  const [sheet, setSheet] = useState<"invite" | "bubble" | "customize" | "profile" | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved) as AppState;
-        const now = Date.now();
-        const expired = parsed.people.filter((person) => person.bubble && person.bubbleCreatedAt && now - person.bubbleCreatedAt >= 86_400_000);
-        setState({
-          ...parsed,
-          people: parsed.people.map((person) => expired.some((item) => item.id === person.id) ? { ...person, bubble: undefined, bubbleCreatedAt: undefined } : person),
-          bubbleLog: [
-            ...expired.filter((person) => person.owner).map((person) => ({ id: `expired-${person.bubbleCreatedAt}`, text: person.bubble!, createdAt: person.bubbleCreatedAt!, expiredAt: now })),
-            ...(parsed.bubbleLog ?? []),
-          ],
-        });
-      }
-      else setShowWelcome(true);
-    } catch { /* demo remains usable */ }
-    if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state, hydrated]);
-
   const owner = useMemo(() => state.people.find((person) => person.owner) ?? state.people[0], [state.people]);
+  const isGuest=viewer?.role==='guest';
+  const viewerCharacter=isGuest&&viewer?viewer:owner;
   const updatePeople = (people: Person[]) => setState((value) => ({ ...value, people }));
   const closeAll = () => { setSelected(null); setSheet(null); };
 
@@ -66,12 +38,6 @@ export default function Home() {
     setSheet(null);
   };
 
-  const addFriend = (person: Person) => {
-    setState((value) => ({ ...value, people: value.people.some((item) => item.id === person.id) ? value.people : [...value.people, person] }));
-    setSheet(null);
-    setArrangeMode(true);
-  };
-
   const removePerson = (id: string, block = false) => {
     setState((value) => ({ ...value, people: value.people.filter((person) => person.id !== id), blocked: block ? [...new Set([...value.blocked, id])] : value.blocked }));
     setSelected(null);
@@ -82,22 +48,24 @@ export default function Home() {
   return <main className="app-shell">
     <header className="app-header">
       <div className="brand"><div className="brand-orbit"><i/>p</div><div><strong>Pluoto</strong><span>{owner.nickname}’s Plane</span></div></div>
-      <button className="profile-button" onClick={() => setSheet(sheet === "profile" ? null : "profile")} aria-label="Open profile"><Character species={owner.species} color={owner.color} accent={owner.accent} accessory={owner.accessory} size={43}/><i/></button>
-      {sheet === "profile" && <ProfileMenu state={state} onCustomize={() => setSheet("customize")} onBubble={() => setSheet("bubble")} onClose={() => setSheet(null)}/>} 
+      <div className="plane-visitors" aria-label={`${state.guests.length} guests have joined`}>{state.guests.slice(-3).map(guest=><span key={guest.id} title={`${guest.nickname} is visiting`}><Character species={guest.species} color={guest.color} accent="#fff2df" size={28}/></span>)}</div>
+      <button className="profile-button" onClick={() => setSheet(sheet === "profile" ? null : "profile")} aria-label="Open profile"><Character species={viewerCharacter.species} color={viewerCharacter.color} accent={'accent' in viewerCharacter?viewerCharacter.accent:'#fff2df'} accessory={'accessory' in viewerCharacter?viewerCharacter.accessory:'none'} size={43}/><i/></button>
+      {sheet === "profile" && (isGuest&&viewer?<GuestMenu guest={viewer} mode={mode} onClose={()=>setSheet(null)}/>:<ProfileMenu state={state} onCustomize={() => setSheet("customize")} onBubble={() => setSheet("bubble")} onClose={() => setSheet(null)}/>)}
     </header>
 
-    <World people={state.people} arrangeMode={arrangeMode} motionPaused={!!selected || !!sheet || showWelcome} onPeopleChange={updatePeople} onCharacterClick={setSelected}/>
+    <World people={state.people} arrangeMode={!isGuest&&arrangeMode} showOwnerBadge={!isGuest} motionPaused={!!selected || !!sheet || showWelcome} onPeopleChange={isGuest?()=>undefined:updatePeople} onCharacterClick={setSelected}/>
 
     <nav className="action-dock">
-      <button onClick={() => setSheet("friends")}><Plus size={19}/><span>Add friend</span>{state.people.length === 4 && <i/>}</button>
-      <button className={arrangeMode ? "active" : ""} onClick={() => setArrangeMode((value) => !value)}>{arrangeMode ? <Check size={18}/> : <Move size={18}/>}<span>{arrangeMode ? "Done" : "Arrange"}</span></button>
+      <button onClick={() => setSheet("invite")}><Share2 size={19}/><span>Invite</span></button>
+      {!isGuest&&<button className={arrangeMode ? "active" : ""} onClick={() => setArrangeMode((value) => !value)}>{arrangeMode ? <Check size={18}/> : <Move size={18}/>}<span>{arrangeMode ? "Done" : "Arrange"}</span></button>}
     </nav>
 
     {arrangeMode && <div className="arrange-banner"><Sparkles size={16}/><span>Make the sky feel like yours</span><button onClick={() => setArrangeMode(false)}>Done</button></div>}
-    {selected && <PersonSheet person={selected} owner={owner} onClose={() => setSelected(null)} onRemove={() => removePerson(selected.id)} onBlock={() => removePerson(selected.id, true)}/>} 
-    {sheet === "friends" && <FriendSheet onClose={closeAll} onAdd={addFriend}/>} 
+    {selected && <PersonSheet person={selected} owner={owner} canManage={!isGuest} onClose={() => setSelected(null)} onRemove={() => removePerson(selected.id)} onBlock={() => removePerson(selected.id, true)}/>}
+    {sheet === "invite" && inviteUrl && <InviteSheet inviteUrl={inviteUrl} mode={mode} onClose={closeAll}/>}
     {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={publishBubble} onClose={closeAll}/>} 
     {sheet === "customize" && <CustomizeFlow owner={owner} onSave={saveOwner} onClose={closeAll}/>} 
-    {showWelcome && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}
+    {showWelcome&&!isGuest && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}
+    {needsGuestJoin&&<GuestJoin planeName={`${owner.nickname}’s Plane`} onJoin={joinGuest}/>}
   </main>;
 }
