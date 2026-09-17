@@ -46,3 +46,9 @@ Grid tests cover exact alignment and uniqueness for 1, 5, 10, and 25 Plots.
 ## Motion preview
 
 Ren and Sarah take an adjacent, unoccupied tile step after a staggered initial pause, then rest for roughly 15–22 seconds. Click a Space name to focus; Reset view returns to the whole Plane. Open a Character card or enter Arrange to pause roaming. Reduced-motion disables autonomous movement, ambient animation, and camera transitions; hidden tabs suspend walking. `lib/motion.ts` provides shared timing, easing, walkable-neighbor selection, and logical poses/headings for future renderers. Current SVG placeholders demonstrate horizontal facing only; full directional poses await the approved asset implementation.
+
+## 3D rendering review slice
+
+The active Plane now uses one React Three Fiber canvas. `lib/render3d.ts` maps unchanged logical tile coordinates to scene units. A fixed 45° azimuth / 30° elevation orthographic camera reproduces the approved 2:1 diamond projection. Terrain contains the existing owned cells and exterior-only side walls; no internal slabs. Models are a single owner-Space house, tree, shrub and toy Character. Other inhabitants retain HTML/SVG placeholders for their existing card interactions. Remaining environment assets are deferred, not deleted from placement data.
+
+The scene uses shared terrain geometry/materials, demand rendering, capped pixel ratio and a single 1024px shadow map. Product UI and Bubble text remain HTML. Pan, zoom, reset, Space focus and collision-checked arrangement remain available. Motion code is retained but autonomous Character animation is intentionally inactive in this visual slice. The pre-3D implementation is saved in Git commit `13ebff9`.

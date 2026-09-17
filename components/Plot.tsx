@@ -25,18 +25,20 @@ type Props = {
   onCharacterClick: (person: Person) => void;
 };
 
-type Placement = {
-  kind: "tree" | "bush" | "flowers" | "lamp" | "bench" | "table" | "path";
+export type Placement = {
+  kind: "tree" | "bush" | "flowers" | "lamp" | "bench" | "table" | "path" | "mailbox";
   tileX: number;
   tileY: number;
   variant?: "blossom" | "tall";
 };
 
-const placements: Record<Person["scene"], Placement[]> = {
+export const placements: Record<Person["scene"], Placement[]> = {
   ren: [
-    { kind: "path", tileX: 2, tileY: 2 }, { kind: "path", tileX: 2, tileY: 3 }, { kind: "path", tileX: 2, tileY: 4 },
-    { kind: "tree", tileX: 4, tileY: 0, variant: "tall" }, { kind: "tree", tileX: 0, tileY: 4 },
-    { kind: "bush", tileX: 4, tileY: 3 }, { kind: "flowers", tileX: 1, tileY: 4 },
+    { kind: "path", tileX: 1, tileY: 2 }, { kind: "path", tileX: 1, tileY: 3 }, { kind: "path", tileX: 1, tileY: 4 },
+    { kind: "tree", tileX: 4, tileY: 0, variant: "tall" }, { kind: "tree", tileX: 3, tileY: 1 }, { kind: "tree", tileX: 0, tileY: 3 },
+    { kind: "bush", tileX: 2, tileY: 0 }, { kind: "bush", tileX: 4, tileY: 2 }, { kind: "bush", tileX: 3, tileY: 4 },
+    { kind: "flowers", tileX: 0, tileY: 2 }, { kind: "flowers", tileX: 2, tileY: 4 }, { kind: "flowers", tileX: 4, tileY: 4 },
+    { kind: "mailbox", tileX: 2, tileY: 2 }, { kind: "bench", tileX: 4, tileY: 3 },
   ],
   sarah: [
     { kind: "path", tileX: 1, tileY: 2 }, { kind: "path", tileX: 1, tileY: 3 }, { kind: "path", tileX: 1, tileY: 4 },
@@ -67,7 +69,7 @@ const placements: Record<Person["scene"], Placement[]> = {
   ],
 };
 
-const houseCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
+export const houseCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
   ren: { tileX: 0, tileY: 0 },
   sarah: { tileX: 1, tileY: 0 },
   maya: { tileX: 2, tileY: 0 },
@@ -77,8 +79,8 @@ const houseCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
   new: { tileX: 1, tileY: 0 },
 };
 
-const characterCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
-  ren: { tileX: 3, tileY: 3 },
+export const characterCells: Record<Person["scene"], { tileX: number; tileY: number }> = {
+  ren: { tileX: 3, tileY: 2 },
   sarah: { tileX: 1, tileY: 3 },
   maya: { tileX: 3, tileY: 4 },
   wei: { tileX: 3, tileY: 2 },
@@ -110,6 +112,7 @@ function EnvironmentObject({ placement }: { placement: Placement }) {
   if (placement.kind === "lamp") return <div className="iso-lamp"><i/></div>;
   if (placement.kind === "bench") return <div className="iso-bench"><i/><b/></div>;
   if (placement.kind === "table") return <div className="iso-table"><i/></div>;
+  if (placement.kind === "mailbox") return <div className="iso-mailbox"><i/></div>;
   return <div className="iso-path-tile"/>;
 }
 

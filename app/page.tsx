@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Move, Plus, Sparkles } from "lucide-react";
 import { Character } from "@/components/Character";
 import { BubbleSheet, CustomizeFlow, FriendSheet, PersonSheet, ProfileMenu } from "@/components/Sheets";
-import { World } from "@/components/World";
+import dynamic from 'next/dynamic';
+const World = dynamic(() => import('@/components/World3D'), {ssr:false});
 import { INITIAL_STATE } from "@/lib/demo";
 import type { AppState, Person } from "@/lib/types";
 
