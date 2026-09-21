@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { PLOT_TILES, type TilePosition } from './world';
 
-export const MOTION = { stepMs: 1800, restMs: 14000, focusMs: 850, bubbleMs: 240 };
+export const MOTION = { stepMs: 1800, restMs: 5500, focusMs: 850, bubbleMs: 240 };
+export const WANDER_DELAY = { initialMin: 1.2, initialMax: 4.2, restMin: 2.8, restMax: 7.2 };
+export function randomWanderDelay(initial = false, random = Math.random) {
+  const min = initial ? WANDER_DELAY.initialMin : WANDER_DELAY.restMin;
+  const max = initial ? WANDER_DELAY.initialMax : WANDER_DELAY.restMax;
+  return min + (max - min) * random();
+}
 export const calmEase = (t: number) => t * t * (3 - 2 * t);
 export function walkableNeighbors(position: TilePosition, blocked: TilePosition[]) {
   return [[1,0],[0,1],[-1,0],[0,-1]].map(([x,y]) => ({ tileX: position.tileX+x, tileY: position.tileY+y }))

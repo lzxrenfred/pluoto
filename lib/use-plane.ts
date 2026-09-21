@@ -2,7 +2,7 @@
 
 import {useCallback,useEffect,useMemo,useRef,useState,type Dispatch,type SetStateAction} from 'react';
 import {INITIAL_STATE} from './demo';
-import {createLocalPlaneStore,createPlaneAccessKey,createPlaneStore,normalizeState,splitPlaneAccessKey,upsertGuest,type PlaneStore,type StoreMode} from './plane-store';
+import {createLocalPlaneStore,createPlaneAccessKey,createPlaneStore,isRemotePlaneAccessKey,normalizeState,splitPlaneAccessKey,upsertGuest,type PlaneStore,type StoreMode} from './plane-store';
 import type {AppState,GuestIdentity,Species} from './types';
 
 const HOME_PLANE_KEY='pluoto-home-plane-v1';
@@ -63,7 +63,7 @@ export function usePlane():{
       const storedViewer=readJson<ViewerIdentity>(viewerStorageKey);
       if(storedViewer)setViewer(storedViewer);
 
-      let store=await createPlaneStore();
+      let store=isRemotePlaneAccessKey(id)?await createPlaneStore():createLocalPlaneStore();
       let loaded:AppState|null=null;
       try {loaded=await store.load(id);} catch(error) {
         console.warn('Configured realtime store is unavailable; continuing locally.',error);
@@ -71,8 +71,10 @@ export function usePlane():{
       }
       if(disposed)return;
       storeRef.current=store;setMode(store.mode);
-      const legacy=readJson<Partial<AppState>>(LEGACY_STATE_KEY);
-      const next=expireBubbles(normalizeState(loaded??legacy,INITIAL_STATE));
+      const legacy=requested?null:readJson<Partial<AppState>>(LEGACY_STATE_KEY);
+      const fresh={...INITIAL_STATE,requiresOnboarding:true,people:INITIAL_STATE.people.map(person=>person.owner?{...person,nickname:"",pills:[],accessory:"none" as const,outfit:"none" as const,houseColor:"coral" as const,decorationPreset:"garden" as const}:person)};
+      const seed=loaded??legacy??fresh;
+      const next=expireBubbles(normalizeState(seed,INITIAL_STATE));
       const snapshot=JSON.stringify(next);
       snapshotRef.current=snapshot;setState(next);
       if(!loaded)await store.save(id,next);

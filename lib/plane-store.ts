@@ -1,4 +1,5 @@
-import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
+import { type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseBrowserClient, hasSupabaseConfig } from './supabase-client';
 import type { AppState, GuestIdentity } from './types';
 
 export type StoreMode = 'realtime'|'local';
@@ -10,15 +11,20 @@ export type PlaneStore = {
   subscribe:(planeId:string,onState:(state:AppState)=>void)=>()=>void;
 };
 
-const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const LOCAL_PREFIX='pluoto-plane-v1:';
 
 export function createPlaneAccessKey() {return `${crypto.randomUUID()}.${crypto.randomUUID()}`;}
+const UUID_PATTERN=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function splitPlaneAccessKey(accessKey:string) {
   const [id,inviteToken]=accessKey.split('.');
   if(!id||!inviteToken)throw new Error('Invalid Plane invite');
   return {id,inviteToken};
+}
+export function isRemotePlaneAccessKey(accessKey:string) {
+  try {
+    const {id,inviteToken}=splitPlaneAccessKey(accessKey);
+    return UUID_PATTERN.test(id)&&UUID_PATTERN.test(inviteToken);
+  } catch {return false;}
 }
 
 export function normalizeState(state:Partial<AppState>|null|undefined,fallback:AppState):AppState {
@@ -28,6 +34,8 @@ export function normalizeState(state:Partial<AppState>|null|undefined,fallback:A
     bubbleLog:Array.isArray(state?.bubbleLog)?state.bubbleLog:[],
     blocked:Array.isArray(state?.blocked)?state.blocked:[],
     completedOnboarding:Boolean(state?.completedOnboarding),
+    requiresOnboarding:Boolean(state?.requiresOnboarding),
+    accountRequired:Boolean(state?.accountRequired),
   };
 }
 
@@ -103,10 +111,10 @@ async function remoteStore(client:SupabaseClient):Promise<PlaneStore> {
   };
 }
 
-/** Uses anonymous Supabase auth when configured; otherwise syncs local tabs. */
+/** Uses the authenticated Supabase session when configured; otherwise syncs local tabs. */
 export async function createPlaneStore():Promise<PlaneStore> {
-  if(url&&key) {
-    try { return await remoteStore(createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}})); }
+  if(hasSupabaseConfig()) {
+    try { return await remoteStore(getSupabaseBrowserClient()); }
     catch(error) { console.warn('Realtime unavailable; using local Plane store.',error); }
   }
   return createLocalPlaneStore();

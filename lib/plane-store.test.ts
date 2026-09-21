@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {INITIAL_STATE} from './demo';
-import {normalizeState,upsertGuest} from './plane-store';
+import {isRemotePlaneAccessKey,normalizeState,upsertGuest} from './plane-store';
 
 describe('plane state',()=>{
   it('migrates older local state without guests',()=>{
@@ -14,5 +14,9 @@ describe('plane state',()=>{
     const second=upsertGuest(first,{...guest,nickname:'Ari again'});
     expect(second.guests).toHaveLength(1);
     expect(second.guests[0].nickname).toBe('Ari again');
+  });
+  it('keeps legacy local review links out of the realtime adapter',()=>{
+    expect(isRemotePlaneAccessKey('onboarding-final-review-2.local-account-flow')).toBe(false);
+    expect(isRemotePlaneAccessKey('9fd81b85-0db0-4c10-99f5-d10098ada883.0bcd97e5-3639-472c-b814-ab5f53f7af31')).toBe(true);
   });
 });

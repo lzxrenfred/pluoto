@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calmEase, walkableNeighbors } from './motion';
+import { WANDER_DELAY, calmEase, randomWanderDelay, walkableNeighbors } from './motion';
 
 describe('calm grid motion', () => {
   it('offers only adjacent in-bounds cells and excludes occupied cells', () => {
@@ -11,5 +11,12 @@ describe('calm grid motion', () => {
     expect(calmEase(1)).toBe(1);
     const samples = Array.from({length:101}, (_,i) => calmEase(i/100));
     expect(samples.every((v,i) => v >= 0 && v <= 1 && (!i || v >= samples[i-1]))).toBe(true);
+  });
+  it('gives each wander an independently variable short rest', () => {
+    expect(randomWanderDelay(true, () => 0)).toBe(WANDER_DELAY.initialMin);
+    expect(randomWanderDelay(true, () => 1)).toBe(WANDER_DELAY.initialMax);
+    expect(randomWanderDelay(false, () => 0)).toBe(WANDER_DELAY.restMin);
+    expect(randomWanderDelay(false, () => 1)).toBe(WANDER_DELAY.restMax);
+    expect(randomWanderDelay(false, () => .17)).not.toBe(randomWanderDelay(false, () => .83));
   });
 });

@@ -1,5 +1,5 @@
--- Existing Plane-sharing schema. For account onboarding, also apply the
--- timestamped migration in supabase/migrations after this file.
+-- Existing Plane-sharing foundation, captured as a migration so fresh linked
+-- projects receive the same schema as installations that used schema.sql.
 create table if not exists public.planes (
   id uuid primary key,
   invite_token uuid not null unique,
@@ -18,16 +18,19 @@ create table if not exists public.plane_members (
 alter table public.planes enable row level security;
 alter table public.plane_members enable row level security;
 
+drop policy if exists "members can read their planes" on public.planes;
 create policy "members can read their planes" on public.planes
   for select to authenticated using (
     exists (select 1 from public.plane_members where plane_id=planes.id and user_id=auth.uid())
   );
+drop policy if exists "members can update their planes" on public.planes;
 create policy "members can update their planes" on public.planes
   for update to authenticated using (
     exists (select 1 from public.plane_members where plane_id=planes.id and user_id=auth.uid())
   ) with check (
     exists (select 1 from public.plane_members where plane_id=planes.id and user_id=auth.uid())
   );
+drop policy if exists "members can see their membership" on public.plane_members;
 create policy "members can see their membership" on public.plane_members
   for select to authenticated using (user_id=auth.uid());
 
@@ -57,8 +60,8 @@ begin
 end;
 $$;
 
-revoke all on function public.join_plane(uuid,uuid) from public;
-revoke all on function public.save_plane(uuid,uuid,jsonb) from public;
+revoke all on function public.join_plane(uuid,uuid) from public, anon, authenticated;
+revoke all on function public.save_plane(uuid,uuid,jsonb) from public, anon, authenticated;
 grant execute on function public.join_plane(uuid,uuid) to authenticated;
 grant execute on function public.save_plane(uuid,uuid,jsonb) to authenticated;
 

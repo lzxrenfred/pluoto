@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, ChevronLeft, Clock3, Copy, QrCode, Share2, ShieldOff, Trash2, X } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { useState } from "react";
+import { Check, ChevronLeft, Clock3, ShieldOff, Trash2, X } from "lucide-react";
 import type { AppState, BubbleEntry, GuestIdentity, Ground, Person, Species } from "@/lib/types";
 import { PILL_GROUPS } from "@/lib/demo";
 import { Character } from "./Character";
@@ -47,18 +46,6 @@ export function BubbleSheet({ owner, log, onPublish, onClose }: { owner: Person;
   return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet" onPointerDown={(e) => e.stopPropagation()}><button className="sheet-close" onClick={onClose}><X/></button>{showLog ? <><p className="eyebrow">PRIVATE</p><h2>Bubble Log</h2><p>Only you can see past thoughts.</p><div className="bubble-log">{log.length === 0 ? <div className="empty-state">Your old Bubbles will settle here.</div> : log.map((item) => <div key={item.id}><span>{item.text}</span><time>{new Date(item.createdAt).toLocaleDateString()}</time></div>)}</div><button className="secondary wide" onClick={() => setShowLog(false)}>Back to Bubble</button></> : <><p className="eyebrow">AMBIENTLY HERE</p><h2>What’s floating around?</h2><p>Your friends see one short thought above your Character for 24 hours.</p><textarea autoFocus maxLength={80} value={text} placeholder="coffee later?" onChange={(e) => setText(e.target.value)}/><div className="text-meta"><span>{text.length}/80</span><span><Clock3 size={14}/> 24 hours</span></div><button className="primary wide" disabled={!text.trim()} onClick={() => onPublish(text.trim())}>{owner.bubble ? "Replace Bubble" : "Publish Bubble"}</button><button className="text-button" onClick={() => setShowLog(true)}>View private Bubble Log</button></>}</section></div>;
 }
 
-export function FriendSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (person: Person) => void }) {
-  const [tab, setTab] = useState<"code" | "add" | "requests">("code");
-  const [code, setCode] = useState("");
-  const [preview, setPreview] = useState(false);
-  const candidate = useMemo<Person>(() => ({ id: "lio", nickname: "Lio", species: "dog", color: "#b9865b", accent: "#f4dfc6", accessory: "cap", plotX: 2, plotY: 0, ground: "sand", home: "studio", scene: "new", pills: ["easygoing", "music", "one-on-one", "travel"] }), []);
-  return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet friend-sheet" onPointerDown={(e) => e.stopPropagation()}><button className="sheet-close" onClick={onClose}><X/></button><p className="eyebrow">BRING SOMEONE CLOSER</p><h2>Add a friend</h2><nav className="segmented"><button className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>My code</button><button className={tab === "add" ? "active" : ""} onClick={() => setTab("add")}>Scan / enter</button><button className={tab === "requests" ? "active" : ""} onClick={() => setTab("requests")}>Requests <b>1</b></button></nav>
-    {tab === "code" && <div className="code-panel"><div className="qr"><QRCodeSVG value="https://pluoto.local/add/REN-825" size={168} fgColor="#14283c" bgColor="#fffdf7"/></div><p>Let a friend scan this</p><button className="code-copy" onClick={() => navigator.clipboard?.writeText("REN-825")}><span>REN-825</span><Copy size={17}/></button><small>Your nickname, Character, Plot preview and a few Pills are shared before they accept.</small></div>}
-    {tab === "add" && <div className="add-panel">{!preview ? <><button className="scan-button"><QrCode/> Scan their code</button><div className="or"><i/>or<i/></div><label>Short code<div><input value={code} placeholder="e.g. LIO-204" onChange={(e) => setCode(e.target.value.toUpperCase())}/><button onClick={() => setPreview(true)} disabled={code.length < 3}>Preview</button></div></label></> : <div className="request-preview"><Character species={candidate.species} color={candidate.color} accent={candidate.accent} accessory={candidate.accessory} size={100}/><h3>{candidate.nickname}</h3><div className="mini-plot-card">5 × 5 sand plot · blue studio</div><div className="pills">{candidate.pills.map((pill) => <span key={pill}>{pill}</span>)}</div><button className="primary wide" onClick={() => onAdd(candidate)}>Send request & demo accept</button><small>In the live flow, Lio must accept before either of you can place a Plot.</small></div>}</div>}
-    {tab === "requests" && <div className="request-item"><Character species="dog" color="#6f8b65" accent="#ead6bd" accessory="none" size={76}/><div><strong>Noa</strong><span>coffee · student · quiet at first</span></div><button className="icon-accept" aria-label="Accept"><Check/></button><button className="icon-decline" aria-label="Decline"><X/></button></div>}
-  </section></div>;
-}
-
 const guestSpecies=["fox","rabbit","cat","turtle"] as const satisfies readonly Species[];
 type GuestSpecies=(typeof guestSpecies)[number];
 const guestColors:Record<GuestSpecies,string>={fox:"#e8794d",rabbit:"#f7eee5",cat:"#d9a16f",turtle:"#79a875"};
@@ -75,23 +62,11 @@ export function GuestJoin({planeName,onJoin}:{planeName:string;onJoin:(draft:{ni
   </section></div>;
 }
 
-export function InviteSheet({inviteUrl,mode,onClose}:{inviteUrl:string;mode:'realtime'|'local';onClose:()=>void}) {
-  const [copied,setCopied]=useState(false);
-  const copy=async()=>{await navigator.clipboard?.writeText(inviteUrl);setCopied(true);setTimeout(()=>setCopied(false),1400);};
-  const share=async()=>{if(navigator.share)await navigator.share({title:"Visit my Pluoto Plane",text:"Come visit my little Plane on Pluoto.",url:inviteUrl});else await copy();};
-  return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet invite-sheet" onPointerDown={event=>event.stopPropagation()}>
-    <button className="sheet-close" onClick={onClose}><X/></button><p className="eyebrow">SHARE YOUR PLANE</p><h2>Invite a guest</h2><p>They’ll choose a nickname and starter animal, then enter without creating an account.</p>
-    <div className="qr"><QRCodeSVG value={inviteUrl} size={180} fgColor="#14283c" bgColor="#fffdf7" level="M"/></div>
-    <div className="invite-actions"><button className="primary" onClick={copy}>{copied?<Check size={18}/>:<Copy size={18}/>} {copied?"Copied":"Copy invite"}</button><button className="secondary" onClick={share}><Share2 size={18}/> Share</button></div>
-    <div className="invite-link">{inviteUrl}</div><small>{mode==='realtime'?"Realtime Plane · guest changes appear across devices":"Local preview mode · realtime sync works between tabs on this device"}</small>
-  </section></div>;
-}
-
 export function GuestMenu({guest,mode,onClose}:{guest:GuestIdentity;mode:'realtime'|'local';onClose:()=>void}) {
   return <div className="profile-popover guest-profile"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={guest.species} color={guest.color} accent="#fff2df" size={65}/><div><strong>{guest.nickname}</strong><span>ANONYMOUS GUEST</span></div></div><p>You’re visiting this Plane without an account.</p><div className="profile-stats"><span><b>{mode==='realtime'?"Live":"Local"}</b> connection</span></div></div>;
 }
 
-export function ProfileMenu({ state, onCustomize, onBubble, onClose }: { state: AppState; onCustomize: () => void; onBubble: () => void; onClose: () => void }) {
+export function ProfileMenu({ state, email, onCustomize, onBubble, onSignOut, onClose }: { state: AppState; email?:string; onCustomize: () => void; onBubble: () => void; onSignOut:()=>void; onClose: () => void }) {
   const owner = state.people.find((person) => person.owner)!;
-  return <div className="profile-popover"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={owner.species} color={owner.color} accent={owner.accent} accessory={owner.accessory} size={65}/><div><strong>{owner.nickname}</strong><span>PLUOTO CODE · REN-825</span></div></div><button onClick={onBubble}>Write a Bubble <span>{owner.bubble ? "active" : ""}</span></button><button onClick={onCustomize}>Customize me & my Plot</button><div className="profile-stats"><span><b>{state.people.length - 1}</b> people</span><span><b>{state.blocked.length}</b> blocked</span></div></div>;
+  return <div className="profile-popover"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={owner.species} color={owner.color} accent={owner.accent} accessory={owner.accessory} size={65}/><div><strong>{owner.nickname}</strong><span>{email??"LOCAL PLANE"}</span></div></div><button onClick={onBubble}>Write a Bubble <span>{owner.bubble ? "active" : ""}</span></button><button onClick={onCustomize}>Customize me & my land</button><button onClick={onSignOut}>Sign out</button><div className="profile-stats"><span><b>{state.people.length - 1}</b> people</span><span><b>{state.blocked.length}</b> blocked</span></div></div>;
 }

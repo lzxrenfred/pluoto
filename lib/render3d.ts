@@ -14,3 +14,7 @@ export function dragToSpace(start: PlotPosition, dx: number, dz: number): PlotPo
 // A 45° azimuth and 30° elevation exactly reproduce the approved 2:1 diamonds.
 export const CAMERA_OFFSET: [number,number,number] = [12, Math.sqrt(288)*Math.tan(Math.PI/6), 12];
 export const TERRAIN_DEPTH = LAND_DEPTH / (ISO_HALF_WIDTH*Math.sqrt(2)*Math.cos(Math.PI/6));
+
+export type CameraView = {position:[number,number,number];target:[number,number,number];zoom:number};
+/** Arrange never manufactures a camera command; the current view remains authoritative. */
+export function preserveCameraView(view:CameraView):CameraView { return {...view,position:[...view.position],target:[...view.target]}; }
