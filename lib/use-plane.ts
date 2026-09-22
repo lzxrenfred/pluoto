@@ -1,7 +1,7 @@
 "use client";
 
 import {useCallback,useEffect,useMemo,useRef,useState,type Dispatch,type SetStateAction} from 'react';
-import {INITIAL_STATE} from './demo';
+import {INITIAL_STATE,withoutSeededDemoFriends} from './demo';
 import {createLocalPlaneStore,createPlaneAccessKey,createPlaneStore,isRemotePlaneAccessKey,normalizeState,splitPlaneAccessKey,upsertGuest,type PlaneStore,type StoreMode} from './plane-store';
 import type {AppState,GuestIdentity,Species} from './types';
 
@@ -72,9 +72,11 @@ export function usePlane():{
       if(disposed)return;
       storeRef.current=store;setMode(store.mode);
       const legacy=requested?null:readJson<Partial<AppState>>(LEGACY_STATE_KEY);
-      const fresh={...INITIAL_STATE,requiresOnboarding:true,people:INITIAL_STATE.people.map(person=>person.owner?{...person,nickname:"",pills:[],accessory:"none" as const,outfit:"none" as const,houseColor:"coral" as const,decorationPreset:"garden" as const}:person)};
+      const freshOwner=INITIAL_STATE.people.find(person=>person.owner)!;
+      const fresh={...INITIAL_STATE,requiresOnboarding:true,people:[{...freshOwner,nickname:"",pills:[],accessory:"none" as const,outfit:"none" as const,houseColor:"coral" as const,decorationPreset:"garden" as const}]};
       const seed=loaded??legacy??fresh;
-      const next=expireBubbles(normalizeState(seed,INITIAL_STATE));
+      const seededPeople=Array.isArray(seed.people)?seed.people:fresh.people;
+      const next=expireBubbles(normalizeState({...seed,people:withoutSeededDemoFriends(seededPeople)},INITIAL_STATE));
       const snapshot=JSON.stringify(next);
       snapshotRef.current=snapshot;setState(next);
       if(!loaded)await store.save(id,next);

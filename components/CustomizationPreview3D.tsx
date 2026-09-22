@@ -7,11 +7,9 @@ import { Group, OrthographicCamera, PCFShadowMap } from "three";
 import type { Person } from "@/lib/types";
 import { TERRAIN_DEPTH } from "@/lib/render3d";
 import { useMotionAllowed } from "@/lib/motion";
-import { characterCells, houseCells, placements, type Placement } from "@/lib/scene-layout";
-import {
-  BenchModel, CharacterModel, FlowerPatchModel, GroundDetailsModel, HouseModel, LampModel,
-  MailboxModel, PathModel, ShrubModel, TableModel, TreeModel,
-} from "./PlaneModels";
+import { characterCellForPerson, landObjectsForPerson } from "@/lib/land-objects";
+import { CharacterModel, GroundDetailsModel } from "./PlaneModels";
+import { LandObjectInstance } from "./LandObjects3D";
 
 const top = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2" };
 const side = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262" };
@@ -30,15 +28,9 @@ function ResponsiveCamera({kind}:{kind:"character"|"land"}) {
   return null;
 }
 
-function EnvironmentObject({ placement, index }: { placement: Placement; index: number }) {
-  if (placement.kind === "tree") return <TreeModel variant={placement.variant}/>;
-  if (placement.kind === "bush") return <ShrubModel/>;
-  if (placement.kind === "flowers") return <FlowerPatchModel/>;
-  if (placement.kind === "path") return <PathModel variant={index}/>;
-  if (placement.kind === "bench") return <BenchModel/>;
-  if (placement.kind === "mailbox") return <MailboxModel/>;
-  if (placement.kind === "lamp") return <LampModel/>;
-  if (placement.kind === "table") return <TableModel/>;
+function PortraitCamera() {
+  const {camera,invalidate}=useThree();
+  useEffect(()=>{camera.lookAt(0,.18,0);camera.updateProjectionMatrix();invalidate();},[camera,invalidate]);
   return null;
 }
 
@@ -65,9 +57,19 @@ export function CharacterPreview3D({ person }: { person: Person }) {
   </div>;
 }
 
+/** Static, world-model portrait for compact UI surfaces. */
+export function CharacterPortrait3D({ person }: { person: Person }) {
+  return <div className="character-portrait-3d" aria-hidden="true">
+    <Canvas orthographic frameloop="demand" camera={{ position: [2, 2.7, 5.8], zoom: 43, near: .1, far: 30 }} dpr={[1, 1.5]}>
+      <PortraitCamera/>
+      <ambientLight intensity={1.45}/><hemisphereLight args={["#fff7e7", "#8d765f", 1.25]}/><directionalLight position={[-4, 7, 6]} intensity={2}/>
+      <group position={[0,-.42,0]} scale={1.2}><CharacterModel person={person}/></group>
+    </Canvas>
+  </div>;
+}
+
 function Land({ person }: { person: Person }) {
-  const house = houseCells[person.scene];
-  const character = characterCells[person.scene];
+  const character = characterCellForPerson(person);
   return <group position={[-2.5, 0, -2.5]}>
     {Array.from({ length: 25 }, (_, index) => {
       const x = index % 5, z = Math.floor(index / 5);
@@ -80,8 +82,7 @@ function Land({ person }: { person: Person }) {
       </group>;
     })}
     <GroundDetailsModel/>
-    <group position={[house.tileX+1,0,house.tileY+1]}><HouseModel home={person.home} houseColor={person.houseColor}/></group>
-    {placements[person.scene].map((item,index)=><group key={`${item.kind}-${index}`} position={[item.tileX+.5,0,item.tileY+.5]}><EnvironmentObject placement={item} index={index}/></group>)}
+    {landObjectsForPerson(person).map(object=><LandObjectInstance key={object.id} object={object} person={person}/>)}
     <group position={[character.tileX+.5,0,character.tileY+.5]}><IdleCharacter person={person}/></group>
   </group>;
 }

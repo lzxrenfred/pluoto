@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "./supabase-client";
 import type { Person } from "./types";
+import { landObjectsForPerson, validateLandObjects } from "./land-objects";
 
 export type InviteContext = { planeId?: string; inviteToken?: string; joinRequested?: boolean; friendInviteToken?: string };
 export type AccountSnapshot = {
@@ -138,7 +139,8 @@ export class LocalAccountStore {
   }
   async save(snapshot: AccountSnapshot) {
     const email = safeEmail(snapshot.email);
-    this.storage.setItem(LOCAL_ACCOUNTS, JSON.stringify({ ...accountMap(this.storage), [email]: { ...snapshot, email } }));
+    const person = { ...snapshot.person, landObjects: validateLandObjects(landObjectsForPerson(snapshot.person)) };
+    this.storage.setItem(LOCAL_ACCOUNTS, JSON.stringify({ ...accountMap(this.storage), [email]: { ...snapshot, person, email } }));
     this.session.setItem(LOCAL_SESSION, email);
   }
   async signOut() { this.session.removeItem(LOCAL_SESSION); }
@@ -207,11 +209,13 @@ class SupabaseAccountStore {
   }
   async save(snapshot: AccountSnapshot) {
     const userId = snapshot.userId;
+    const normalizedPerson = { ...snapshot.person, landObjects: validateLandObjects(landObjectsForPerson(snapshot.person)) };
+    const { bubble: _bubble, bubbleCreatedAt: _bubbleCreatedAt, bubbleExpiresAt: _bubbleExpiresAt, ...persistedPerson } = normalizedPerson;
     const profile = await this.client.from("profiles").upsert({ id: userId, nickname: snapshot.person.nickname, pending_invite: snapshot.inviteContext ?? {}, updated_at: new Date().toISOString() });
     if (profile.error) throw new AccountError("network", profile.error.message);
     const operations = [
-      this.client.from("character_customizations").upsert({ user_id: userId, person_snapshot: snapshot.person, updated_at: new Date().toISOString() }),
-      this.client.from("lands").upsert({ owner_id: userId, ground: snapshot.person.ground, home: snapshot.person.home, house_color: snapshot.person.houseColor, decoration_preset: snapshot.person.decorationPreset, person_snapshot: snapshot.person, updated_at: new Date().toISOString() }, { onConflict: "owner_id" }),
+      this.client.from("character_customizations").upsert({ user_id: userId, person_snapshot: persistedPerson, updated_at: new Date().toISOString() }),
+      this.client.from("lands").upsert({ owner_id: userId, ground: snapshot.person.ground, home: snapshot.person.home, house_color: snapshot.person.houseColor, decoration_preset: snapshot.person.decorationPreset, person_snapshot: persistedPerson, updated_at: new Date().toISOString() }, { onConflict: "owner_id" }),
       this.client.from("plane_arrangements").upsert({ owner_id: userId, arrangement: snapshot.arrangement, updated_at: new Date().toISOString() }),
     ];
     const results = await Promise.all(operations);

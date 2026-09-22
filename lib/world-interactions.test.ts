@@ -9,6 +9,7 @@ import {
   moveLandInArrangement,
   pointerMoved,
   scenePointToPlacement,
+  terrainOccupancyForLand,
   type CharacterPlacement,
 } from "./world-interactions";
 
@@ -60,6 +61,15 @@ describe("world interactions", () => {
     expect(gestureOwner(1, "land", true)).toBe("land");
     expect(gestureOwner(2, "land", true)).toBe("camera");
     expect(gestureOwner(1, "background", true)).toBe("camera");
+  });
+
+  it("exposes both chunk walls immediately while a neighboring land is detached",()=>{
+    const layout=[person("owner",0,0,true),person("friend",1,0)];
+    expect(terrainOccupancyForLand(layout,"owner",null).has("5,2")).toBe(true);
+    expect(terrainOccupancyForLand(layout,"owner","friend").has("5,2")).toBe(false);
+    const moving=terrainOccupancyForLand(layout,"friend","friend");
+    expect(moving.has("4,2")).toBe(false);
+    expect(moving.has("5,2")).toBe(true);
   });
 });
 

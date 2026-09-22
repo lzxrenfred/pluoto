@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { ContactShadows, Html, Line, OrbitControls } from "@react-three/drei";
-import { BoxGeometry, Group, MathUtils, MeshStandardMaterial, OrthographicCamera, PCFShadowMap, Plane, PlaneGeometry, Vector3 } from "three";
+import { ContactShadows, Html, Line, OrbitControls, RoundedBox } from "@react-three/drei";
+import { BoxGeometry, CanvasTexture, Group, LinearFilter, MathUtils, MeshStandardMaterial, OrthographicCamera, PCFShadowMap, Plane, PlaneGeometry, SRGBColorSpace, Vector3 } from "three";
 import type { OrbitControls as Controls } from "three-stdlib";
-import { Home, Minus, Plus, RotateCcw } from "lucide-react";
+import { Minus, Plus, RotateCcw } from "lucide-react";
 import type { Person } from "@/lib/types";
-import { isSlotFree, PLOT_TILES, spaceTiles, type PlotPosition, type TilePosition } from "@/lib/world";
+import { isSlotFree, PLOT_TILES, type PlotPosition, type TilePosition } from "@/lib/world";
 import { CAMERA_OFFSET, TERRAIN_DEPTH, spaceAnchor } from "@/lib/render3d";
 import { randomWanderDelay, useMotionAllowed, walkableNeighbors } from "@/lib/motion";
 import {
@@ -17,13 +17,14 @@ import {
   moveLandInArrangement,
   pointerMoved,
   scenePointToPlacement,
+  terrainOccupancyForLand,
   type CharacterPlacement,
 } from "@/lib/world-interactions";
-import { characterCells, houseCells, placements, type Placement } from "@/lib/scene-layout";
-import {
-  BenchModel, CharacterModel, FlowerPatchModel, GroundDetailsModel, HouseModel, LampModel,
-  MailboxModel, PathModel, ShrubModel, TableModel, TreeModel,
-} from "./PlaneModels";
+import { LAND_SIGN_CELL } from "@/lib/scene-layout";
+import { blockedLandCells, characterCellForPerson, landObjectsForPerson } from "@/lib/land-objects";
+import type { LandObject } from "@/lib/types";
+import { CharacterModel, GroundDetailsModel } from "./PlaneModels";
+import { LandObjectInstance } from "./LandObjects3D";
 
 type Props = {
   people: Person[];
@@ -48,30 +49,6 @@ const floor = new Plane(new Vector3(0, 1, 0), 0);
 const palette = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2" };
 const sidePalette = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262" };
 const localTiles = Array.from({ length: PLOT_TILES ** 2 }, (_, index) => ({ tileX: index % PLOT_TILES, tileY: Math.floor(index / PLOT_TILES) }));
-
-function EnvironmentModel({ placement, index }: { placement: Placement; index: number }) {
-  if (placement.kind === "tree") return <TreeModel variant={placement.variant}/>;
-  if (placement.kind === "bush") return <ShrubModel/>;
-  if (placement.kind === "flowers") return <FlowerPatchModel/>;
-  if (placement.kind === "path") return <PathModel variant={index}/>;
-  if (placement.kind === "bench") return <BenchModel/>;
-  if (placement.kind === "mailbox") return <MailboxModel/>;
-  if (placement.kind === "lamp") return <LampModel/>;
-  if (placement.kind === "table") return <TableModel/>;
-  return null;
-}
-
-function blockedCells(person: Person) {
-  const cells = new Set<string>();
-  const house = houseCells[person.scene];
-  for (let x = house.tileX; x < house.tileX + 2; x += 1) {
-    for (let y = house.tileY; y < house.tileY + 2; y += 1) cells.add(`${x},${y}`);
-  }
-  placements[person.scene].forEach((placement) => {
-    if (placement.kind !== "path") cells.add(`${placement.tileX},${placement.tileY}`);
-  });
-  return cells;
-}
 
 function CameraRig({ command, interactionActive }: { command: Command; interactionActive: boolean }) {
   const { camera, size, invalidate } = useThree();
@@ -102,16 +79,16 @@ function CameraRig({ command, interactionActive }: { command: Command; interacti
   />;
 }
 
-function AmbientObject({ placement, index, active }: { placement: Placement; index: number; active: boolean }) {
+function AmbientObject({ object, person, index, active }: { object: LandObject; person: Person; index: number; active: boolean }) {
   const ref = useRef<Group>(null);
   const { invalidate } = useThree();
-  const offset = useMemo(() => index * 1.73 + placement.tileX * .71 + placement.tileY * 1.13, [index, placement]);
+  const offset = useMemo(() => index * 1.73 + object.tileX * .71 + object.tileY * 1.13, [index, object]);
   useFrame(({ clock }) => {
-    if (!ref.current || !active || !["tree", "bush", "flowers"].includes(placement.kind)) return;
-    ref.current.rotation.z = Math.sin(clock.elapsedTime * .34 + offset) * (placement.kind === "tree" ? .012 : .007);
+    if (!ref.current || !active || !(object.modelId.startsWith("tree.") || ["bush", "flowers"].includes(object.modelId))) return;
+    ref.current.rotation.z = Math.sin(clock.elapsedTime * .34 + offset) * (object.modelId.startsWith("tree.") ? .012 : .007);
     invalidate();
   });
-  return <group ref={ref}><EnvironmentModel placement={placement} index={index}/></group>;
+  return <group ref={ref}><LandObjectInstance object={object} person={person}/></group>;
 }
 
 function CharacterPuff({ active }: { active: boolean }) {
@@ -136,10 +113,11 @@ function CharacterPuff({ active }: { active: boolean }) {
   </group>;
 }
 
-function CharacterActor({ person, placement, blocked, otherOccupants, motionActive, dragging, returning, landingPulse, showName, onPointerDown }: {
+function CharacterActor({ person, placement, blocked, otherOccupants, motionActive, dragging, returning, landingPulse, showName, onPointerDown, onClick }: {
   person: Person; placement: CharacterPlacement; blocked: TilePosition[]; otherOccupants: TilePosition[];
   motionActive: boolean; dragging: boolean; returning: boolean; landingPulse: number; showName: boolean;
   onPointerDown: (event: ThreeEvent<PointerEvent>, person: Person, group: Group) => void;
+  onClick: () => void;
 }) {
   const root = useRef<Group>(null);
   const body = useRef<Group>(null);
@@ -204,23 +182,46 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
     <mesh position={[0, .015, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <circleGeometry args={[.3, 28]}/><meshBasicMaterial color="#455648" transparent opacity={dragging ? .1 : .18}/>
     </mesh>
-    <group ref={body}><CharacterModel person={person}/></group>
+    <group ref={body}><CharacterModel person={person}/>{person.bubble&&<Html position={[0,person.species==='rabbit'?1.48:person.species==='turtle'?1.05:1.3,0]} zIndexRange={[35,15]} transform={false}><div className="space3d-bubble-anchor"><button className="space3d-bubble" onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>{event.stopPropagation();onClick();}} onClick={event=>event.stopPropagation()}>{person.bubble}</button></div></Html>}</group>
     {showName && <Html position={[0, 1.2, 0]} center zIndexRange={[36, 16]}><div className="character-name-label">{person.nickname}</div></Html>}
     <CharacterPuff active={returning}/>
   </group>;
 }
 
+function useSignText(nickname:string) {
+  const texture=useMemo(()=>{
+    const canvas=document.createElement("canvas");canvas.width=512;canvas.height=160;
+    const context=canvas.getContext("2d")!;context.clearRect(0,0,canvas.width,canvas.height);
+    context.fillStyle="#102b49";context.font="800 82px Manrope, sans-serif";context.textAlign="center";context.textBaseline="middle";
+    let label=nickname.trim()||"Pluoto";
+    while(label.length>1&&context.measureText(label).width>430)label=label.slice(0,-1);
+    if(label!==nickname.trim())label=`${label.trimEnd()}…`;
+    context.fillText(label,256,82);
+    const result=new CanvasTexture(canvas);result.colorSpace=SRGBColorSpace;result.minFilter=LinearFilter;result.needsUpdate=true;return result;
+  },[nickname]);
+  useEffect(()=>()=>texture.dispose(),[texture]);
+  return texture;
+}
+
 function LandSign({ person, arranging, onFocus }: { person: Person; arranging: boolean; onFocus: () => void }) {
-  const contents = <>
-    {person.owner && <span className="land-sign-home" aria-label="Your home"><Home size={11}/></span>}
-    <span className="land-sign-board"><span>{person.nickname}</span></span><i/><b/>
-  </>;
-  return <Html position={[2.5, .42, 4.72]} center zIndexRange={[28, 8]}>
-    {person.owner
-      ? <div className="land-sign is-home" aria-label={`${person.nickname}'s home`} style={{ pointerEvents: "none" }}>{contents}</div>
-      : <button className="land-sign" onClick={onFocus} tabIndex={arranging ? -1 : 0}
-          aria-label={`Focus ${person.nickname}'s land`} style={{ pointerEvents: arranging ? "none" : "auto" }}>{contents}</button>}
-  </Html>;
+  const text=useSignText(person.nickname);
+  const interactive=!arranging&&!person.owner;
+  return <group position={[LAND_SIGN_CELL.tileX+.5,0,LAND_SIGN_CELL.tileY+.5]} rotation={[0,Math.PI/4,0]}
+    onPointerDown={interactive?event=>event.stopPropagation():undefined}
+    onClick={interactive?event=>{event.stopPropagation();onFocus();}:undefined}>
+    {[-.31,.31].map(x=><mesh key={x} position={[x,.18,0]} castShadow receiveShadow><boxGeometry args={[.075,.36,.075]}/><meshStandardMaterial color="#95633f" roughness={.92}/></mesh>)}
+    <RoundedBox position={[0,.53,0]} args={[1,.46,.12]} radius={.07} smoothness={3} castShadow receiveShadow><meshStandardMaterial color="#b88457" roughness={.9}/></RoundedBox>
+    <RoundedBox position={[0,.53,.072]} args={[.9,.34,.035]} radius={.045} smoothness={3}><meshStandardMaterial color="#fff2d9" roughness={.88}/></RoundedBox>
+    <mesh position={[0,.53,.094]}><planeGeometry args={[.82,.27]}/><meshBasicMaterial map={text} transparent toneMapped={false}/></mesh>
+    {person.owner&&<group position={[0,.9,.02]}>
+      <RoundedBox args={[.23,.23,.07]} radius={.06} smoothness={3} castShadow><meshStandardMaterial color="#173b5c" roughness={.88}/></RoundedBox>
+      <mesh position={[0,.035,.043]} rotation={[0,0,Math.PI/4]}><boxGeometry args={[.105,.105,.025]}/><meshBasicMaterial color="#fff2d9"/></mesh>
+      <mesh position={[0,-.045,.045]}><boxGeometry args={[.115,.09,.025]}/><meshBasicMaterial color="#fff2d9"/></mesh>
+    </group>}
+    <Html position={[0,.53,.11]} center zIndexRange={[4,1]}>
+      {person.owner?<span className="space3d-accessible" aria-label={`${person.nickname}'s home`}/>:<button className="space3d-accessible" tabIndex={arranging?-1:0} onClick={onFocus} aria-label={`Focus ${person.nickname}'s land`}/>}
+    </Html>
+  </group>;
 }
 
 function ArrangementGrid({ people }: { people: Person[] }) {
@@ -273,7 +274,7 @@ function DropIndicator({ placement, people, valid }: { placement: CharacterPlace
 
 function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, sideGeometry, arranging, suspendPosition,
   motionActive, characters, blockedByLand, allPlacements, activeCharacterId, labelId, returning, landingPulses,
-  onLandPointerDown, onCharacterPointerDown, registerLand, onFocus }: {
+  onLandPointerDown, onCharacterPointerDown, onCharacterClick, registerLand, onFocus }: {
   person: Person; occupied: ReadonlySet<string>; material: MeshStandardMaterial; sideMaterial: MeshStandardMaterial;
   planeGeometry: PlaneGeometry; sideGeometry: BoxGeometry; arranging: boolean; suspendPosition: boolean;
   motionActive: boolean; characters: Person[]; blockedByLand: ReadonlyMap<string, ReadonlySet<string>>;
@@ -282,6 +283,7 @@ function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, si
   returning: ReadonlySet<string>; landingPulses: Readonly<Record<string, number>>;
   onLandPointerDown: (event: ThreeEvent<PointerEvent>, person: Person) => void;
   onCharacterPointerDown: (event: ThreeEvent<PointerEvent>, person: Person, group: Group) => void;
+  onCharacterClick: (person: Person) => void;
   registerLand: (group: Group | null) => void;
   onFocus: () => void;
 }) {
@@ -309,12 +311,7 @@ function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, si
       </group>;
     })}
     <GroundDetailsModel/>
-    <group position={[houseCells[person.scene].tileX + 1, 0, houseCells[person.scene].tileY + 1]}><HouseModel home={person.home} houseColor={person.houseColor}/></group>
-    {placements[person.scene].map((placement, index) => (
-      <group key={`${placement.kind}-${placement.tileX}-${placement.tileY}-${index}`} position={[placement.tileX + .5, 0, placement.tileY + .5]}>
-        <AmbientObject placement={placement} index={index} active={motionActive}/>
-      </group>
-    ))}
+    {landObjectsForPerson(person).map((object, index) => <AmbientObject key={object.id} object={object} person={person} index={index} active={motionActive}/>)}
     {characters.map((character) => {
       const placement = allPlacements.get(character.id)!;
       const otherOccupants = [...allPlacements.entries()].filter(([id, item]) => id !== character.id && item.landId === person.id)
@@ -322,7 +319,7 @@ function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, si
       return <CharacterActor key={character.id} person={character} placement={placement} blocked={blocked}
         otherOccupants={otherOccupants} motionActive={motionActive} dragging={activeCharacterId === character.id}
         returning={returning.has(character.id)} landingPulse={landingPulses[character.id] ?? 0}
-        showName={labelId === character.id} onPointerDown={onCharacterPointerDown}/>;
+        showName={labelId === character.id} onPointerDown={onCharacterPointerDown} onClick={()=>onCharacterClick(character)}/>;
     })}
     <LandSign person={person} arranging={arranging} onFocus={onFocus}/>
   </group>;
@@ -359,10 +356,10 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
     planeGeometry.dispose(); sideGeometry.dispose();
   }, [materials, sideMaterials, planeGeometry, sideGeometry]);
 
-  const occupied = useMemo(() => new Set(spaceTiles(people).map(({ tileX, tileY }) => `${tileX},${tileY}`)), [people]);
-  const blockedByLand = useMemo(() => new Map(people.map((person) => [person.id, blockedCells(person)])), [people]);
+  const occupiedByLand = useMemo(() => new Map(people.map(person=>[person.id,terrainOccupancyForLand(people,person.id,visualLandId)])), [people,visualLandId]);
+  const blockedByLand = useMemo(() => new Map(people.map((person) => [person.id, blockedLandCells(person)])), [people]);
   const effectivePlacements = useMemo(() => new Map(people.map((person) => [person.id,
-    temporary[person.id] ?? { landId: person.id, ...characterCells[person.scene] },
+    temporary[person.id] ?? { landId: person.id, ...characterCellForPerson(person) },
   ])), [people, temporary]);
   const peopleByLand = useMemo(() => new Map(people.map((land) => [land.id,
     people.filter((person) => effectivePlacements.get(person.id)?.landId === land.id),
@@ -439,6 +436,7 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
     setVisualLandId(person.id); setInteractionActive(true); setLandPreview({ person, target: person, valid: true });
   };
   const onCharacterPointerDown = (event: ThreeEvent<PointerEvent>, person: Person, group: Group) => {
+    if ((event.nativeEvent.target as Element | null)?.closest?.(".space3d-bubble")) return;
     if (arrangeMode || !canPlay || (event.pointerType === "touch" && pointers.current.size > 1)) return;
     const placement = effectivePlacements.get(person.id)!;
     const parentLand = people.find((land) => land.id === placement.landId);
@@ -515,13 +513,14 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
     {arrangeMode && <ArrangementGrid people={people}/>}
     <group onPointerMove={onPointerMove} onPointerUp={onPointerUp}
       onPointerCancel={(event) => { releaseCapture(event); cancelLandDrag(); cancelCharacterDrag(); }}>
-      {people.map((person) => <LandChunk key={person.id} person={person} occupied={occupied}
+      {people.map((person) => <LandChunk key={person.id} person={person} occupied={occupiedByLand.get(person.id)!}
         material={materials[person.ground]} sideMaterial={sideMaterials[person.ground]}
         planeGeometry={planeGeometry} sideGeometry={sideGeometry} arranging={arrangeMode}
         suspendPosition={visualLandId === person.id} motionActive={motionAllowed && !motionPaused && !arrangeMode}
         characters={peopleByLand.get(person.id) ?? []} blockedByLand={blockedByLand} allPlacements={effectivePlacements}
         activeCharacterId={activeCharacterId} labelId={labelId} returning={returning} landingPulses={landingPulses}
         onLandPointerDown={onLandPointerDown} onCharacterPointerDown={onCharacterPointerDown}
+        onCharacterClick={onCharacterClick}
         registerLand={(group) => group ? landGroups.current.set(person.id, group) : landGroups.current.delete(person.id)}
         onFocus={() => onFocus(person)}/>)}
     </group>
@@ -534,7 +533,6 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
       const position: [number, number, number] = [land.plotX * PLOT_TILES + placement.tileX + .5, 1.18, land.plotY * PLOT_TILES + placement.tileY + .5];
       return <group key={`overlay-${person.id}`}>
         <Html position={[position[0], .3, position[2]]} center zIndexRange={[2, 1]}><button className="space3d-accessible" aria-label={`Open ${person.nickname}'s card`} onClick={() => onCharacterClick(person)}>Open {person.nickname}&apos;s card</button></Html>
-        {person.bubble && <Html position={[position[0], 1.3, position[2]]} center zIndexRange={[35, 15]}><div className="space3d-bubble">{person.bubble}</div></Html>}
       </group>;
     })}
   </>;
@@ -571,7 +569,9 @@ export default function World3D(props: Props) {
       let changed = false;
       const next: CharacterMap = {};
       Object.entries(current).forEach(([id, placement]) => {
-        if (ids.has(id) && ids.has(placement.landId)) next[id] = placement;
+        const land=props.people.find(person=>person.id===placement.landId);
+        const valid=land&&!blockedLandCells(land).has(`${placement.tileX},${placement.tileY}`);
+        if (ids.has(id) && ids.has(placement.landId) && valid) next[id] = placement;
         else { changed = true; timers.current?.cancel(id); }
       });
       return changed ? next : current;

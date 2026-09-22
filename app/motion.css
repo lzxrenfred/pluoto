@@ -1,7 +1,7 @@
 /* Shared calm motion primitives; grid translation is supplied by useGridMotion. */
 .space3d-label{border:0;border-radius:5px;padding:5px 8px;background:#fff1dc;color:#485449;white-space:nowrap;font-size:10px;font-weight:700;cursor:pointer}
 .space3d-character{border:0;background:none;cursor:pointer;transform:translateY(-50%)}
-.space3d-bubble{white-space:nowrap;padding:6px 9px;background:#fffdf7;border-radius:12px;font-size:11px;box-shadow:0 3px 9px #394e4215;pointer-events:none}
+.space3d-bubble{pointer-events:auto}
 .space3d-accessible{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .space3d-accessible:focus{width:auto;height:auto;clip-path:none;background:white}
 .world.camera-gliding { transition-property: transform; transition-timing-function: cubic-bezier(.22,.65,.3,1); }

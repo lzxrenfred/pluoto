@@ -9,12 +9,29 @@ import {FriendCenter,FriendInviteLanding} from "@/components/FriendCenter";
 import dynamic from "next/dynamic";
 import { beginArrangement } from "@/lib/world-interactions";
 import { usePlane } from "@/lib/use-plane";
-import type { Person } from "@/lib/types";
+import type { LandObject, Person } from "@/lib/types";
 import { createAccountStore, readInviteContext, type AccountSnapshot, type AccountStore } from "@/lib/account-store";
 import {createFriendStore,FriendError,type FriendPreview,type FriendRecord,type FriendState,type FriendStore} from "@/lib/friend-store";
 import {isSlotFree} from "@/lib/world";
+import {createBubbleStore,type BubbleState,type BubbleStore} from "@/lib/bubble-store";
+import {withoutSeededDemoFriends} from "@/lib/demo";
 
 const World = dynamic(() => import("@/components/World3D"), { ssr: false });
+const LandEditor = dynamic(() => import("@/components/LandEditor3D"), { ssr: false });
+const CharacterPortrait3D = dynamic(() => import("@/components/CustomizationPreview3D").then(module => module.CharacterPortrait3D), { ssr: false });
+
+function InlineBubbleComposer({current,onPublish,onClear,onOpen}: {current?:string;onPublish:(text:string)=>Promise<void>;onClear:()=>Promise<void>;onOpen:()=>void}) {
+  const [expanded,setExpanded]=useState(false);const [text,setText]=useState(current??"");const [error,setError]=useState("");const [busy,setBusy]=useState(false);
+  useEffect(()=>{if(!expanded)setText(current??"");},[current,expanded]);
+  const publish=async()=>{const next=text.trim();if(!next&&!current){setExpanded(false);return;}setBusy(true);setError("");try{if(next)await onPublish(next);else await onClear();setExpanded(false);}catch(cause){setError(cause instanceof Error?cause.message:"Your Bubble could not be saved.");}finally{setBusy(false);}};
+  return <section className={`inline-bubble-composer ${expanded?"expanded":""}`} aria-label="Bubble composer">
+    {!expanded?<button onClick={()=>setExpanded(true)}><span>{current??"What’s on your mind?"}</span><b>{current?"Edit":"Bubble"}</b></button>:<>
+      <textarea autoFocus maxLength={80} value={text} placeholder="What’s on your mind?" onChange={event=>setText(event.target.value)}/>
+      <div className="inline-bubble-meta"><span>{error||`${text.length}/80 · visible for 24 hours`}</span><button onClick={()=>{setExpanded(false);setError("");}}>Cancel</button><button className="primary" disabled={busy||(!current&&!text.trim())} onClick={publish}>{busy?"Saving…":current&&!text.trim()?"Clear":current?"Update":"Publish"}</button></div>
+      <button className="inline-bubble-more" onClick={onOpen}>Bubble history</button>
+    </>}
+  </section>;
+}
 
 export default function Home() {
   const { state, setState, hydrated, viewer, needsGuestJoin, joinGuest, mode } = usePlane();
@@ -22,12 +39,14 @@ export default function Home() {
   const [selected, setSelected] = useState<Person | null>(null);
   const [sheet, setSheet] = useState<"invite" | "bubble" | "customize" | "profile" | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [editingLand, setEditingLand] = useState(false);
   const [resetSignal, setResetSignal] = useState(0);
   const [account, setAccount] = useState<AccountStore | null>(null);
   const [accountSnapshot, setAccountSnapshot] = useState<AccountSnapshot | null>(null);
   const [accountReady, setAccountReady] = useState(false);
   const [forceAccountGate, setForceAccountGate] = useState(false);
   const [friendStore,setFriendStore]=useState<FriendStore|null>(null);
+  const [bubbleStore,setBubbleStore]=useState<BubbleStore|null>(null);
   const [friendState,setFriendState]=useState<FriendState|null>(null);
   const [friendLoading,setFriendLoading]=useState(false);
   const [friendInvitePreview,setFriendInvitePreview]=useState<FriendPreview|null>(null);
@@ -53,7 +72,9 @@ export default function Home() {
     setForceAccountGate(false);
     setState(value => {
       const positions = new Map(snapshot.arrangement.map(item => [item.personId, item]));
-      return {...value, completedOnboarding:true, requiresOnboarding:false, accountRequired:true, people:value.people.map(person => {
+      const retained=withoutSeededDemoFriends(value.people);
+      const base=retained.some(person=>person.owner)?retained:[snapshot.person];
+      return {...value, completedOnboarding:true, requiresOnboarding:false, accountRequired:true, people:base.map(person => {
         if(person.owner) {
           const position=positions.get(snapshot.person.id);
           return {...snapshot.person,plotX:position?.plotX??person.plotX,plotY:position?.plotY??person.plotY,owner:true};
@@ -69,8 +90,10 @@ export default function Home() {
     if(!hydrated)return;
     const store=createAccountStore();
     const social=createFriendStore();
+    const bubbles=createBubbleStore();
     setAccount(store);
     setFriendStore(social);
+    setBubbleStore(bubbles);
     void store.restore().then(snapshot=>{if(snapshot)applyAccount(snapshot);}).catch(error=>console.warn("Account restoration failed",error)).finally(()=>setAccountReady(true));
     try{const draft=JSON.parse(localStorage.getItem("pluoto-onboarding-draft-v2")??"null") as {inviteContext?:{friendInviteToken?:string}}|null;if(draft?.inviteContext?.friendInviteToken)setInviteAuthStarted(true);}catch{}
   },[applyAccount,hydrated]);
@@ -86,19 +109,33 @@ export default function Home() {
   },[accountSnapshot,friendStore,setState]);
 
   useEffect(()=>{if(!accountSnapshot||!friendStore)return;void refreshFriends();return friendStore.subscribe(accountSnapshot,()=>void refreshFriends());},[accountSnapshot,friendStore,refreshFriends]);
+  const applyBubbleState=useCallback((result:BubbleState)=>setState(value=>({...value,bubbleLog:result.archive,people:value.people.map(person=>person.owner?{...person,bubble:result.active?.text,bubbleCreatedAt:result.active?.createdAt,bubbleExpiresAt:result.active?.expiresAt}:person)})),[setState]);
+  useEffect(()=>{if(!accountSnapshot||!bubbleStore)return;const refresh=()=>void bubbleStore.load(accountSnapshot).then(applyBubbleState).catch(error=>console.warn("Bubble refresh failed",error));refresh();return bubbleStore.subscribe(accountSnapshot,refresh);},[accountSnapshot,applyBubbleState,bubbleStore]);
+  useEffect(()=>{
+    const active=state.people.filter(person=>person.bubble&&person.bubbleCreatedAt).map(person=>({id:person.id,expiresAt:person.bubbleExpiresAt??person.bubbleCreatedAt!+86_400_000}));
+    if(!active.length)return;
+    const expire=()=>{const now=Date.now();setState(value=>({...value,people:value.people.map(person=>{const expiry=person.bubbleExpiresAt??(person.bubbleCreatedAt?person.bubbleCreatedAt+86_400_000:Infinity);return person.bubble&&expiry<=now?{...person,bubble:undefined,bubbleCreatedAt:undefined,bubbleExpiresAt:undefined}:person;})}));if(accountSnapshot&&bubbleStore)void bubbleStore.load(accountSnapshot).then(applyBubbleState).catch(()=>undefined);};
+    const next=Math.min(...active.map(item=>item.expiresAt));const delay=Math.max(0,next-Date.now());
+    if(delay===0){expire();return;}const timer=window.setTimeout(expire,Math.min(delay,2_147_000_000));return()=>window.clearTimeout(timer);
+  },[accountSnapshot,applyBubbleState,bubbleStore,setState,state.people]);
   useEffect(()=>{if(accountSnapshot&&openFriendsAfterAuth&&friendState){setSheet("invite");setOpenFriendsAfterAuth(false);}},[accountSnapshot,friendState,openFriendsAfterAuth]);
   useEffect(()=>{if(!friendInviteToken||!friendStore||friendInviteResolved)return;setFriendInviteError("");void friendStore.preview(friendInviteToken).then(setFriendInvitePreview).catch(error=>setFriendInviteError(error instanceof FriendError?error.message:"That invitation is unavailable."));},[friendInviteResolved,friendInviteToken,friendStore]);
 
   const signOut=async()=>{await account?.signOut();clearOnboardingDraft();setAccountSnapshot(null);setSheet(null);setForceAccountGate(true);};
 
-  const publishBubble = (text: string) => {
-    const now = Date.now();
-    setState((value) => {
-      const previous = value.people.find((person) => person.owner)?.bubble;
-      const log = previous ? [{ id: `bubble-${now}`, text: previous, createdAt: value.people.find((person) => person.owner)?.bubbleCreatedAt ?? now, expiredAt: now }, ...value.bubbleLog] : value.bubbleLog;
-      return { ...value, bubbleLog: log, people: value.people.map((person) => person.owner ? { ...person, bubble: text, bubbleCreatedAt: now } : person) };
-    });
-    setSheet(null);
+  const publishBubble = async (text: string) => {
+    if(!accountSnapshot||!bubbleStore)throw new Error("Sign in to publish a Bubble.");
+    const result=await bubbleStore.publish(accountSnapshot,text);applyBubbleState(result);
+  };
+  const clearBubble=async()=>{if(!accountSnapshot||!bubbleStore)return;const result=await bubbleStore.clear(accountSnapshot);applyBubbleState(result);};
+  const saveLand=async(objects:LandObject[])=>{
+    if(!accountSnapshot||!account)throw new Error("Sign in to save your land.");
+    const person={...owner,landObjects:objects};
+    const next={...accountSnapshot,person};
+    await account.save(next);
+    setAccountSnapshot(next);
+    setState(value=>({...value,people:value.people.map(item=>item.owner?person:item)}));
+    setEditingLand(false);
   };
 
   const removePerson = (id: string, block = false) => {
@@ -150,39 +187,43 @@ export default function Home() {
       </button>
       <div className="corner-actions">
         <button className="profile-button" onClick={() => isGuest ? setSheet(sheet === "profile" ? null : "profile") : setSelected(owner)} aria-label="Open my Character">
-          <Character species={viewerCharacter.species} color={viewerCharacter.color} accent={"accent" in viewerCharacter ? viewerCharacter.accent : "#fff2df"} accessory={"accessory" in viewerCharacter ? viewerCharacter.accessory : "none"} size={43}/>
+          <CharacterPortrait3D person={("accent" in viewerCharacter?viewerCharacter:{...owner,id:viewerCharacter.id,nickname:viewerCharacter.nickname,species:viewerCharacter.species,color:viewerCharacter.color,accent:"#fff2df",accessory:"none"}) as Person}/>
         </button>
         <button className="settings-button" onClick={() => setSheet(sheet === "profile" ? null : "profile")} aria-label="Open settings"><Settings size={21}/></button>
       </div>
-      {sheet === "profile" && (isGuest && viewer ? <GuestMenu guest={viewer} mode={mode} onClose={() => setSheet(null)}/> : <ProfileMenu state={state} email={accountSnapshot?.email} onCustomize={() => setSheet("customize")} onBubble={() => setSheet("bubble")} onSignOut={signOut} onClose={() => setSheet(null)}/>)}
+      {sheet === "profile" && (isGuest && viewer ? <GuestMenu guest={viewer} mode={mode} onClose={() => setSheet(null)}/> : <ProfileMenu state={state} email={accountSnapshot?.email} onCustomize={() => setSheet("customize")} onEditLand={()=>{setSheet(null);setEditingLand(true);}} onBubble={() => setSheet("bubble")} onSignOut={signOut} onClose={() => setSheet(null)}/>)}
     </header>
 
     <World
       people={visiblePeople}
       arrangeMode={arranging}
-      canPlay={!isGuest}
+      canPlay={!isGuest&&!editingLand}
       selectedId={selected?.id}
       resetSignal={resetSignal}
-      motionPaused={!!selected || !!sheet || showWelcome}
+      motionPaused={!!selected || !!sheet || showWelcome || editingLand}
       onPeopleChange={setArrangeDraft}
       onCharacterClick={setSelected}
     />
 
-    {!arranging && <nav className="action-dock" aria-label="Plane actions">
-      <button onClick={openFriends}><Share2 size={19}/><span>Friends</span></button>
-      {!isGuest && <button onClick={startArrange}><Move size={18}/><span>Arrange</span></button>}
-    </nav>}
+    {!arranging && !editingLand && <div className={`home-controls ${isGuest?"guest":""}`}>
+      <nav className="action-dock" aria-label="Plane actions">
+        <button onClick={openFriends}><Share2 size={19}/><span>Friends</span></button>
+        {!isGuest && <button onClick={startArrange}><Move size={18}/><span>Arrange</span></button>}
+      </nav>
+      {!isGuest && <InlineBubbleComposer current={owner.bubble} onPublish={publishBubble} onClear={clearBubble} onOpen={()=>setSheet("bubble")}/>} 
+    </div>}
 
     {arranging && <nav className="arrange-controls" aria-label="Arrange controls">
       <button onClick={cancelArrange}><X size={18}/><span>Cancel</span></button>
       <button className="primary" onClick={finishArrange}><Check size={18}/><span>Done</span></button>
     </nav>}
 
-    {selected && <PersonSheet person={selected} owner={owner} canManage={!isGuest} onClose={() => setSelected(null)} onRemove={() => removePerson(selected.id)} onBlock={() => removePerson(selected.id, true)}/>}
+    {selected && <PersonSheet person={selected} owner={owner} canManage={!isGuest} onEditLand={selected.owner?()=>{setSelected(null);setEditingLand(true);}:undefined} onClose={() => setSelected(null)} onRemove={() => removePerson(selected.id)} onBlock={() => removePerson(selected.id, true)}/>} 
     {sheet === "invite" && accountSnapshot && friendState && <FriendCenter actor={accountSnapshot} state={friendState} store={friendStore} onRefresh={refreshFriends} onClose={closeAll} onPlace={placeFriend} onHide={hideFriend} onRemove={removeFriend} onBlock={blockFriend}/>}
     {sheet === "invite" && accountSnapshot && !friendState && <div className="sheet-backdrop"><section className="bottom-sheet"><button className="sheet-close" onClick={closeAll}><X/></button><p>{friendLoading?"Loading friends…":"Friend service unavailable."}</p></section></div>}
-    {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={publishBubble} onClose={closeAll}/>}
-    {sheet === "customize" && <OnboardingFlow editing owner={owner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount} onCancel={closeAll}/>}
+    {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={async text=>{await publishBubble(text);setSheet(null);}} onClear={async()=>{await clearBubble();setSheet(null);}} onClose={closeAll}/>}
+    {sheet === "customize" && <OnboardingFlow editing owner={owner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount} onCancel={closeAll}/>} 
+    {editingLand&&<LandEditor person={owner} onSave={saveLand} onCancel={()=>setEditingLand(false)}/>} 
     {showWelcome && !isGuest && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}
     {needsGuestJoin && <GuestJoin planeName={`${owner.nickname}’s Plane`} onJoin={joinGuest}/>}
   </main>;

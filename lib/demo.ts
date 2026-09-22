@@ -31,6 +31,17 @@ export const INITIAL_STATE: AppState = {
   completedOnboarding: false,
 };
 
+const fixtureById = new Map(DEMO_PEOPLE.filter(person => !person.owner).map(person => [person.id, person]));
+/** Removes only exact legacy fixtures; a real UUID user named Maya, Wei, or Sarah is never matched. */
+export function isSeededDemoFixture(person: Person) {
+  const fixture = fixtureById.get(person.id);
+  return Boolean(fixture && person.nickname === fixture.nickname && person.scene === fixture.scene && person.species === fixture.species);
+}
+
+export function withoutSeededDemoFriends(people: Person[]) {
+  return people.filter(person => !isSeededDemoFixture(person));
+}
+
 export const PILL_GROUPS = {
   Personality: ["introvert", "extrovert", "ambivert", "quiet at first", "curious", "spontaneous", "easygoing", "thoughtful", "optimistic", "independent", "warm", "playful", "observant", "adventurous", "homebody", "night owl", "old soul", "big dreamer"],
   Interests: ["coffee", "travel", "gym", "volleyball", "gaming", "film", "photography", "books", "design", "art", "cooking", "running", "hiking", "fashion", "tech", "football", "music", "board games", "dance", "architecture", "cafes", "animals"],

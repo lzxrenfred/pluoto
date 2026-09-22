@@ -63,6 +63,18 @@ export function moveLandInArrangement(people: Person[], id: string, target: Plot
   return people.map((person, index) => index === movingIndex ? { ...person, ...target } : person);
 }
 
+/** Face-culling occupancy while a chunk is detached: stationary lands exclude it; the moving land sees only itself. */
+export function terrainOccupancyForLand(people: Person[], renderedLandId: string, detachedLandId: string | null) {
+  const included = detachedLandId
+    ? (renderedLandId === detachedLandId ? people.filter(person => person.id === detachedLandId) : people.filter(person => person.id !== detachedLandId))
+    : people;
+  const cells = new Set<string>();
+  included.forEach(person => {
+    for(let y=0;y<PLOT_TILES;y+=1)for(let x=0;x<PLOT_TILES;x+=1)cells.add(`${person.plotX*PLOT_TILES+x},${person.plotY*PLOT_TILES+y}`);
+  });
+  return cells;
+}
+
 export class CharacterReturnTimers {
   private deadlines = new Map<string, number>();
   private handles = new Map<string, ReturnType<typeof setTimeout>>();

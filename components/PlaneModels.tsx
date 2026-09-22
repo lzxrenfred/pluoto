@@ -141,6 +141,13 @@ export function MailboxModel() {
     <Block position={[0,.67,.255]} size={[.3,.19,.035]} material="roofShade" radius={.012}/><Block position={[.24,.79,.03]} size={[.045,.36,.045]} material="darkWood" radius={.014}/><Block position={[.31,.94,.03]} size={[.17,.12,.035]} material="coral" radius={.012}/>
   </group>;
 }
+export function RockClusterModel() {
+  return <group>
+    <Pebble position={[-.34,.18,.02]} scale={[.34,.2,.28]} material="stone"/>
+    <Pebble position={[.08,.24,-.08]} scale={[.3,.27,.25]} material="stoneWarm"/>
+    <Pebble position={[.38,.13,.1]} scale={[.23,.15,.2]} material="stone"/>
+  </group>;
+}
 /** Non-colliding surface detail, authored in Ren-local grid units. */
 export function GroundDetailsModel() {
   const patches:[number,number,number,number][]=[[2.72,.36,.34,.17],[3.68,.62,.27,.13],[.55,2.55,.26,.12],[4.45,1.78,.3,.14],[2.7,3.52,.24,.12],[.55,4.42,.29,.13]];
@@ -164,19 +171,37 @@ function TurtleCharacter({person}:{person:Person}) {
     <Pebble position={[-.065,.37,.47]} scale={[.02,.028,.015]} material="dark"/><Pebble position={[.065,.37,.47]} scale={[.02,.028,.015]} material="dark"/>
   </group>;
 }
+function TurtleAccessory({accessory}:{accessory:Person['accessory']}) {
+  if(accessory==='glasses')return <group position={[0,.3,.405]} scale={.52}>{[-.12,.12].map(x=><mesh key={x} position={[x,0,0]}><torusGeometry args={[.09,.018,7,18]}/><primitive object={materials.dark} attach="material"/></mesh>)}<Block position={[0,0,0]} size={[.08,.018,.018]} material="dark" radius={.006}/></group>;
+  if(accessory==='headphones')return <group position={[0,.35,.29]} scale={.58}><mesh><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} material="coral"/>)}</group>;
+  if(accessory==='cap')return <group position={[0,.43,.28]} scale={.58}><mesh scale={[.31,.11,.27]}><sphereGeometry args={[1,14,8,0,Math.PI*2,0,Math.PI/2]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[0,.01,.27]} size={[.32,.035,.18]} material="coral" radius={.045}/></group>;
+  if(accessory==='scarf')return <group position={[0,.22,.3]} scale={.64}><mesh rotation={[Math.PI/2,0,0]}><torusGeometry args={[.2,.035,8,20]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[.13,-.12,.18]} size={[.09,.28,.045]} material="coral" radius={.025}/></group>;
+  return <group position={[.27,.17,.18]} scale={.64}><RoundedBox args={[.22,.27,.1]} radius={.05} smoothness={2} material={materials.coral} castShadow/><mesh position={[0,.2,0]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.12,.018,7,18,Math.PI]}/><primitive object={materials.darkWood} attach="material"/></mesh></group>;
+}
 function CharacterAccessory({person}:{person:Person}) {
   const accessory=person.accessory;
   if(accessory==='none')return null;
+  if(person.species==='turtle')return <TurtleAccessory accessory={accessory}/>;
   if(accessory==='glasses')return <group position={[0,.67,.285]}>{[-.12,.12].map(x=><mesh key={x} position={[x,0,0]}><torusGeometry args={[.09,.018,7,18]}/><primitive object={materials.dark} attach="material"/></mesh>)}<Block position={[0,0,0]} size={[.08,.018,.018]} material="dark" radius={.006}/></group>;
-  if(accessory==='headphones')return <group position={[0,.73,.02]}><mesh rotation={[0,Math.PI/2,0]}><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} material="coral"/>)}</group>;
+  if(accessory==='headphones')return <group position={[0,.73,.02]}><mesh><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} material="coral"/>)}</group>;
   if(accessory==='cap')return <group position={[0,.91,.04]}><mesh scale={[.31,.11,.27]}><sphereGeometry args={[1,14,8,0,Math.PI*2,0,Math.PI/2]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[0,.01,.27]} size={[.32,.035,.18]} material="coral" radius={.045}/></group>;
   if(accessory==='scarf')return <group position={[0,.47,.02]}><mesh rotation={[Math.PI/2,0,0]}><torusGeometry args={[.2,.035,8,20]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[.13,-.12,.18]} size={[.09,.28,.045]} material="coral" radius={.025}/></group>;
   return <group position={[.28,.35,.02]}><RoundedBox args={[.22,.27,.1]} radius={.05} smoothness={2} material={materials.coral} castShadow/><mesh position={[0,.2,0]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.12,.018,7,18,Math.PI]}/><primitive object={materials.darkWood} attach="material"/></mesh></group>;
 }
 
+export function outfitFit(species:Person['species']) {
+  if(species==='turtle') return {position:[0,.31,.205] as [number,number,number],scale:[.48,.29,.12] as [number,number,number]};
+  if(species==='rabbit') return {position:[0,.31,.205] as [number,number,number],scale:[.45,.32,.11] as [number,number,number]};
+  return {position:[0,.31,.205] as [number,number,number],scale:[.47,.33,.11] as [number,number,number]};
+}
 function Outfit({person}:{person:Person}) {
   if((person.outfit??'none')==='none')return null;
-  return <RoundedBox position={[0,.34,.015]} args={[.43,.34,.36]} radius={.12} smoothness={3} castShadow receiveShadow><meshStandardMaterial color="#5f789c" roughness={.92}/></RoundedBox>;
+  const fit=outfitFit(person.species);
+  return <group>
+    <RoundedBox position={fit.position} args={fit.scale} radius={.08} smoothness={3} castShadow receiveShadow><meshStandardMaterial color="#5f789c" roughness={.92}/></RoundedBox>
+    {[-1,1].map(side=><Pebble key={side} position={[side*.25,.34,.12]} scale={[.085,.11,.09]} color="#5f789c"/>)}
+    <mesh position={[0,.455,.265]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.09,.018,8,18,Math.PI]}/><meshStandardMaterial color="#d8e0eb" roughness={.9}/></mesh>
+  </group>;
 }
 
 /** Shared toy proportions with visible species, outfit and accessory variants. */

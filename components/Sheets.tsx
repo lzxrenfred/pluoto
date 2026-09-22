@@ -5,15 +5,17 @@ import { Check, ChevronLeft, Clock3, ShieldOff, Trash2, X } from "lucide-react";
 import type { AppState, BubbleEntry, GuestIdentity, Ground, Person, Species } from "@/lib/types";
 import { PILL_GROUPS } from "@/lib/demo";
 import { Character } from "./Character";
+import {pillCategory, pillCategoryClass} from "@/lib/pills";
 
-export function PersonSheet({ person, owner, canManage=true, onClose, onRemove, onBlock }: { person: Person; owner: Person; canManage?:boolean; onClose: () => void; onRemove: () => void; onBlock: () => void }) {
-  const shared = person.pills.filter((pill) => owner.pills.includes(pill));
+export function PersonSheet({ person, canManage=true, onEditLand, onClose, onRemove, onBlock }: { person: Person; owner: Person; canManage?:boolean; onEditLand?:()=>void; onClose: () => void; onRemove: () => void; onBlock: () => void }) {
+  const groups = Object.keys(PILL_GROUPS).map(category => ({category,pills:person.pills.filter(pill=>pillCategory(pill)===category)})).filter(group=>group.pills.length);
   return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet person-sheet" onPointerDown={(e) => e.stopPropagation()}>
     <button className="sheet-close" onClick={onClose}><X size={19}/></button>
     <Character species={person.species} color={person.color} accent={person.accent} accessory={person.accessory} size={104}/>
     <p className="eyebrow">IN YOUR PLANE</p><h2>{person.nickname}</h2>
     {person.bubble && <div className="sheet-bubble">“{person.bubble}”</div>}
-    <div className="pills">{person.pills.map((pill) => <span className={shared.includes(pill) ? "shared" : ""} key={pill}>{shared.includes(pill) && "✦ "}{pill}</span>)}</div>
+    {groups.length ? <div className="identity-groups">{groups.map(group=><section key={group.category}><h3>{group.category}</h3><div className="pills identity-pills">{group.pills.map((pill) => <span className={pillCategoryClass(pill)} key={pill}>{pill}</span>)}</div></section>)}</div> : <p className="identity-empty">{person.owner ? "You haven’t added any identity Pills yet." : `${person.nickname} hasn’t added any identity Pills yet.`}</p>}
+    {person.owner&&onEditLand&&<button className="primary wide person-edit-land" onClick={onEditLand}>Edit my land</button>}
     {canManage && !person.owner && <details className="friend-actions"><summary>Friend settings</summary><div><button onClick={onRemove}><Trash2 size={16}/> Remove from Plane</button><button className="danger" onClick={onBlock}><ShieldOff size={16}/> Block {person.nickname}</button></div></details>}
   </section></div>;
 }
@@ -40,10 +42,13 @@ export function CustomizeFlow({ owner, onSave, onClose }: CustomizeProps) {
   </div>;
 }
 
-export function BubbleSheet({ owner, log, onPublish, onClose }: { owner: Person; log: BubbleEntry[]; onPublish: (text: string) => void; onClose: () => void }) {
+export function BubbleSheet({ owner, log, onPublish, onClear, onClose }: { owner: Person; log: BubbleEntry[]; onPublish: (text: string) => Promise<void>; onClear: () => Promise<void>; onClose: () => void }) {
   const [text, setText] = useState(owner.bubble ?? "");
   const [showLog, setShowLog] = useState(false);
-  return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet" onPointerDown={(e) => e.stopPropagation()}><button className="sheet-close" onClick={onClose}><X/></button>{showLog ? <><p className="eyebrow">PRIVATE</p><h2>Bubble Log</h2><p>Only you can see past thoughts.</p><div className="bubble-log">{log.length === 0 ? <div className="empty-state">Your old Bubbles will settle here.</div> : log.map((item) => <div key={item.id}><span>{item.text}</span><time>{new Date(item.createdAt).toLocaleDateString()}</time></div>)}</div><button className="secondary wide" onClick={() => setShowLog(false)}>Back to Bubble</button></> : <><p className="eyebrow">AMBIENTLY HERE</p><h2>What’s floating around?</h2><p>Your friends see one short thought above your Character for 24 hours.</p><textarea autoFocus maxLength={80} value={text} placeholder="coffee later?" onChange={(e) => setText(e.target.value)}/><div className="text-meta"><span>{text.length}/80</span><span><Clock3 size={14}/> 24 hours</span></div><button className="primary wide" disabled={!text.trim()} onClick={() => onPublish(text.trim())}>{owner.bubble ? "Replace Bubble" : "Publish Bubble"}</button><button className="text-button" onClick={() => setShowLog(true)}>View private Bubble Log</button></>}</section></div>;
+  const [busy,setBusy]=useState(false);const [error,setError]=useState("");
+  const save=async()=>{const next=text.trim();if(!next&&!owner.bubble)return;setBusy(true);setError("");try{if(next)await onPublish(next);else await onClear();}catch(cause){setError(cause instanceof Error?cause.message:"Your Bubble could not be saved.");}finally{setBusy(false);}};
+  const clear=async()=>{setBusy(true);setError("");try{await onClear();}catch(cause){setError(cause instanceof Error?cause.message:"Your Bubble could not be cleared.");}finally{setBusy(false);}};
+  return <div className="sheet-backdrop" onPointerDown={onClose}><section className="bottom-sheet" onPointerDown={(e) => e.stopPropagation()}><button className="sheet-close" onClick={onClose}><X/></button>{showLog ? <><p className="eyebrow">PRIVATE</p><h2>Bubble Log</h2><p>Only you can see past thoughts.</p><div className="bubble-log">{log.length === 0 ? <div className="empty-state">Your old Bubbles will settle here.</div> : log.map((item) => <div key={item.id}><span>{item.text}</span><time>{new Date(item.createdAt).toLocaleDateString()}</time></div>)}</div><button className="secondary wide" onClick={() => setShowLog(false)}>Back to Bubble</button></> : <><p className="eyebrow">AMBIENTLY HERE</p><h2>What’s floating around?</h2><p>Your friends see one short thought above your Character for 24 hours.</p><textarea autoFocus maxLength={80} value={text} placeholder="coffee later?" onChange={(e) => setText(e.target.value)}/><div className="text-meta"><span>{text.length}/80</span><span><Clock3 size={14}/> 24 hours</span></div>{error&&<div className="form-error">{error} Your draft is still here.</div>}<div className="bubble-sheet-actions"><button className="primary wide" disabled={busy||(!owner.bubble&&!text.trim())} onClick={save}>{busy?"Saving…":owner.bubble&&!text.trim()?"Clear Bubble":owner.bubble ? "Replace Bubble" : "Publish Bubble"}</button>{owner.bubble&&<button className="secondary wide" disabled={busy} onClick={clear}>Clear current Bubble</button>}</div><button className="text-button" onClick={() => setShowLog(true)}>View private Bubble Log</button></>}</section></div>;
 }
 
 const guestSpecies=["fox","rabbit","cat","turtle"] as const satisfies readonly Species[];
@@ -66,7 +71,7 @@ export function GuestMenu({guest,mode,onClose}:{guest:GuestIdentity;mode:'realti
   return <div className="profile-popover guest-profile"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={guest.species} color={guest.color} accent="#fff2df" size={65}/><div><strong>{guest.nickname}</strong><span>ANONYMOUS GUEST</span></div></div><p>You’re visiting this Plane without an account.</p><div className="profile-stats"><span><b>{mode==='realtime'?"Live":"Local"}</b> connection</span></div></div>;
 }
 
-export function ProfileMenu({ state, email, onCustomize, onBubble, onSignOut, onClose }: { state: AppState; email?:string; onCustomize: () => void; onBubble: () => void; onSignOut:()=>void; onClose: () => void }) {
+export function ProfileMenu({ state, email, onCustomize, onEditLand, onBubble, onSignOut, onClose }: { state: AppState; email?:string; onCustomize: () => void; onEditLand:()=>void; onBubble: () => void; onSignOut:()=>void; onClose: () => void }) {
   const owner = state.people.find((person) => person.owner)!;
-  return <div className="profile-popover"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={owner.species} color={owner.color} accent={owner.accent} accessory={owner.accessory} size={65}/><div><strong>{owner.nickname}</strong><span>{email??"LOCAL PLANE"}</span></div></div><button onClick={onBubble}>Write a Bubble <span>{owner.bubble ? "active" : ""}</span></button><button onClick={onCustomize}>Customize me & my land</button><button onClick={onSignOut}>Sign out</button><div className="profile-stats"><span><b>{state.people.length - 1}</b> people</span><span><b>{state.blocked.length}</b> blocked</span></div></div>;
+  return <div className="profile-popover"><button className="popover-close" onClick={onClose}><X size={17}/></button><div className="profile-title"><Character species={owner.species} color={owner.color} accent={owner.accent} accessory={owner.accessory} size={65}/><div><strong>{owner.nickname}</strong><span>{email??"LOCAL PLANE"}</span></div></div><button onClick={onBubble}>Write a Bubble <span>{owner.bubble ? "active" : ""}</span></button><button onClick={onEditLand}>Edit objects on my land</button><button onClick={onCustomize}>Customize Character & theme</button><button onClick={onSignOut}>Sign out</button><div className="profile-stats"><span><b>{state.people.length - 1}</b> people</span><span><b>{state.blocked.length}</b> blocked</span></div></div>;
 }
