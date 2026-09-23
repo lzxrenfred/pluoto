@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AccountError, authRedirectUrl, LocalAccountStore, readInviteContext, safeInternalReturn, type AccountSnapshot } from "./account-store";
 import { DEMO_PEOPLE } from "./demo";
+import { landObjectsForPerson, validateLandObjects } from "./land-objects";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -20,7 +21,10 @@ describe("local password account fallback", () => {
     await store.signOut();
     expect(await store.restore()).toBeNull();
     await expect(store.signIn("ren@example.com", "wrong-password")).rejects.toMatchObject({ code: "invalid_credentials" } satisfies Partial<AccountError>);
-    expect((await store.signIn("ren@example.com", "a-good-password")).existing).toEqual(snapshot);
+    expect((await store.signIn("ren@example.com", "a-good-password")).existing).toEqual({
+      ...snapshot,
+      person: { ...snapshot.person, landObjects: validateLandObjects(landObjectsForPerson(snapshot.person)) },
+    });
   });
 
   it("rejects duplicate emails and short passwords", async () => {

@@ -94,7 +94,7 @@ export function Plot({ person, arrangeMode, selected, motionPaused, onFocus, onP
       >
         <span className="inhabitant-shadow"/>
         <span className={`inhabitant-pose ${character.moving ? 'is-walking' : 'is-resting'}`} style={{display:'block', transform:`translateY(${-character.lift}px) scaleX(${character.headingX-character.headingY < 0 ? -1 : 1})`}}>
-          <Character className="plane-character" species={person.species} color={person.color} accent={person.accent} accessory={person.accessory} size={48}/>
+          <Character className="plane-character" species={person.species} color={person.color} accent={person.accent} accessory={person.accessory} accessories={person.accessories} accessoryColor={person.accessoryColor} accessoryColors={person.accessoryColors} size={48}/>
         </span>
       </button>
       {arrangeMode && !person.owner && <div className="iso-drag-handle">move</div>}

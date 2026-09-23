@@ -7,12 +7,13 @@ import { Group, OrthographicCamera, PCFShadowMap } from "three";
 import type { Person } from "@/lib/types";
 import { TERRAIN_DEPTH } from "@/lib/render3d";
 import { useMotionAllowed } from "@/lib/motion";
-import { characterCellForPerson, landObjectsForPerson } from "@/lib/land-objects";
+import { characterCellForPerson, landObjectsForPerson, signCellForPerson, signModelZ } from "@/lib/land-objects";
 import { CharacterModel, GroundDetailsModel } from "./PlaneModels";
 import { LandObjectInstance } from "./LandObjects3D";
+import { LandSignModel } from "./LandSignModel";
 
-const top = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2" };
-const side = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262" };
+const top = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2", meadow: "#a8c894", clay: "#c99680" };
+const side = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262", meadow: "#8e795d", clay: "#9b6b5a" };
 
 function Lights() {
   return <><ambientLight intensity={1.35}/><hemisphereLight args={["#dff3ff", "#8d765f", 1.15]}/><directionalLight castShadow position={[-5, 9, 5]} intensity={2.1} shadow-mapSize={[1024, 1024]} shadow-camera-left={-6} shadow-camera-right={6} shadow-camera-top={6} shadow-camera-bottom={-6}/></>;
@@ -70,6 +71,7 @@ export function CharacterPortrait3D({ person }: { person: Person }) {
 
 function Land({ person }: { person: Person }) {
   const character = characterCellForPerson(person);
+  const sign=signCellForPerson(person);
   return <group position={[-2.5, 0, -2.5]}>
     {Array.from({ length: 25 }, (_, index) => {
       const x = index % 5, z = Math.floor(index / 5);
@@ -83,6 +85,7 @@ function Land({ person }: { person: Person }) {
     })}
     <GroundDetailsModel/>
     {landObjectsForPerson(person).map(object=><LandObjectInstance key={object.id} object={object} person={person}/>)}
+    <group position={[sign.tileX+.5,0,signModelZ(sign)]} rotation={[0,Math.PI/4,0]}><LandSignModel nickname={person.nickname}/></group>
     <group position={[character.tileX+.5,0,character.tileY+.5]}><IdleCharacter person={person}/></group>
   </group>;
 }

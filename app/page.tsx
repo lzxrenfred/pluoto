@@ -36,6 +36,9 @@ function InlineBubbleComposer({current,onPublish,onClear,onOpen}: {current?:stri
 export default function Home() {
   const { state, setState, hydrated, viewer, needsGuestJoin, joinGuest, mode } = usePlane();
   const [arrangeDraft, setArrangeDraft] = useState<Person[] | null>(null);
+  const [arrangeBusy,setArrangeBusy]=useState(false);
+  const [arrangeError,setArrangeError]=useState("");
+  const pendingPlacements=useRef(new Map<string,{plotX:number;plotY:number}>());
   const [selected, setSelected] = useState<Person | null>(null);
   const [sheet, setSheet] = useState<"invite" | "bubble" | "customize" | "profile" | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -56,6 +59,7 @@ export default function Home() {
   const [inviteAuthStarted,setInviteAuthStarted]=useState(false);
   const [openFriendsAfterAuth,setOpenFriendsAfterAuth]=useState(false);
   const socialIds=useRef(new Set<string>());
+  const friendRefreshId=useRef(0);
 
   const owner = useMemo(() => state.people.find((person) => person.owner) ?? state.people[0], [state.people]);
   const onboardingOwner = useMemo(() => forceAccountGate ? {...owner,nickname:"",pills:[],accessory:"none" as const,outfit:"none" as const,species:"fox" as const,color:"#e8794d",accent:"#fff2df"} : owner, [forceAccountGate,owner]);
@@ -100,12 +104,13 @@ export default function Home() {
 
   const refreshFriends=useCallback(async()=>{
     if(!accountSnapshot||!friendStore)return;
+    const requestId=++friendRefreshId.current;
     setFriendLoading(true);
     try{
-      const result=await friendStore.list(accountSnapshot);const previous=socialIds.current;const current=new Set(result.friends.map(friend=>friend.preview.userId));socialIds.current=current;setFriendState(result);
+      const result=await friendStore.list(accountSnapshot);if(requestId!==friendRefreshId.current)return;const previous=socialIds.current;const current=new Set(result.friends.map(friend=>friend.preview.userId));socialIds.current=current;setFriendState(result);
       const placed=result.friends.filter(friend=>friend.placement&&!friend.placement.hidden);
-      setState(value=>{const next=value.people.filter(person=>!previous.has(person.id)||placed.some(friend=>friend.preview.userId===person.id));for(const friend of placed){const placement=friend.placement!;const person={...friend.preview.person,owner:false,plotX:placement.plotX,plotY:placement.plotY};const index=next.findIndex(item=>item.id===person.id);if(index>=0)next[index]=person;else next.push(person);}return{...value,people:next};});
-    }catch(error){console.warn("Friend refresh failed",error);}finally{setFriendLoading(false);}
+      setState(value=>{const next=value.people.filter(person=>!previous.has(person.id)||placed.some(friend=>friend.preview.userId===person.id));for(const friend of placed){const placement=pendingPlacements.current.get(friend.preview.userId)??friend.placement!;const person={...friend.preview.person,owner:false,plotX:placement.plotX,plotY:placement.plotY};const index=next.findIndex(item=>item.id===person.id);if(index>=0)next[index]=person;else next.push(person);}return{...value,people:next};});
+    }catch(error){console.warn("Friend refresh failed",error);}finally{if(requestId===friendRefreshId.current)setFriendLoading(false);}
   },[accountSnapshot,friendStore,setState]);
 
   useEffect(()=>{if(!accountSnapshot||!friendStore)return;void refreshFriends();return friendStore.subscribe(accountSnapshot,()=>void refreshFriends());},[accountSnapshot,friendStore,refreshFriends]);
@@ -128,9 +133,11 @@ export default function Home() {
     const result=await bubbleStore.publish(accountSnapshot,text);applyBubbleState(result);
   };
   const clearBubble=async()=>{if(!accountSnapshot||!bubbleStore)return;const result=await bubbleStore.clear(accountSnapshot);applyBubbleState(result);};
-  const saveLand=async(objects:LandObject[])=>{
+  const deleteBubble=async(id:string)=>{if(!accountSnapshot||!bubbleStore)return;const result=await bubbleStore.remove(accountSnapshot,id);applyBubbleState(result);};
+  const clearAllBubbles=async()=>{if(!accountSnapshot||!bubbleStore)return;const result=await bubbleStore.clearAll(accountSnapshot);applyBubbleState(result);};
+  const saveLand=async(objects:LandObject[],signPosition:{tileX:number;tileY:number})=>{
     if(!accountSnapshot||!account)throw new Error("Sign in to save your land.");
-    const person={...owner,landObjects:objects};
+    const person={...owner,landObjects:objects,signPosition,signPositionVersion:2 as const,decorationPreset:"custom" as const,savedCustomLand:{objects,signPosition,scene:owner.scene}};
     const next={...accountSnapshot,person};
     await account.save(next);
     setAccountSnapshot(next);
@@ -150,16 +157,25 @@ export default function Home() {
     setArrangeDraft(beginArrangement(state.people));
   };
 
-  const cancelArrange = () => setArrangeDraft(null);
-  const finishArrange = () => {
-    if (!arrangeDraft) return;
-    setState((value) => ({ ...value, people: arrangeDraft }));
-    if(accountSnapshot&&account) {
-      const next={...accountSnapshot,arrangement:arrangeDraft.map(person=>({personId:person.id,plotX:person.plotX,plotY:person.plotY}))};
-      setAccountSnapshot(next);void account.save(next).catch(error=>console.warn("Account arrangement save failed",error));
-    }
-    if(accountSnapshot&&friendStore&&friendState){for(const friend of friendState.friends){const person=arrangeDraft.find(item=>item.id===friend.preview.userId);if(person)void friendStore.setPlacement(accountSnapshot,person.id,{plotX:person.plotX,plotY:person.plotY,hidden:false});}}
-    setArrangeDraft(null);
+  const cancelArrange = () => {pendingPlacements.current.clear();setArrangeError("");setArrangeDraft(null);};
+  const finishArrange = async () => {
+    if (!arrangeDraft || arrangeBusy) return;
+    setArrangeBusy(true);setArrangeError("");
+    const draft=arrangeDraft;
+    try {
+      if(accountSnapshot&&account) {
+        const next={...accountSnapshot,arrangement:draft.map(person=>({personId:person.id,plotX:person.plotX,plotY:person.plotY}))};
+        friendState?.friends.forEach(friend=>{const person=draft.find(item=>item.id===friend.preview.userId);if(person)pendingPlacements.current.set(person.id,{plotX:person.plotX,plotY:person.plotY});});
+        await account.save(next);
+        if(friendStore&&friendState)await Promise.all(friendState.friends.map(friend=>{const person=draft.find(item=>item.id===friend.preview.userId);return person?friendStore.setPlacement(next,person.id,{plotX:person.plotX,plotY:person.plotY,hidden:false}):Promise.resolve();}));
+        setAccountSnapshot(next);
+        await refreshFriends();
+      }
+      setState(value=>({...value,people:draft}));
+      setArrangeDraft(null);
+      pendingPlacements.current.clear();
+    }catch(error){setArrangeError(error instanceof Error?error.message:"The new arrangement could not be saved.");}
+    finally{setArrangeBusy(false);}
   };
 
   const firstFree=useCallback((people:Person[])=>{for(let radius=1;radius<15;radius++)for(let y=-radius;y<=radius;y++)for(let x=-radius;x<=radius;x++)if(Math.max(Math.abs(x),Math.abs(y))===radius&&isSlotFree({plotX:x,plotY:y},people))return{plotX:x,plotY:y};return{plotX:0,plotY:0};},[]);
@@ -171,10 +187,10 @@ export default function Home() {
   const clearInviteUrl=()=>{const url=new URL(window.location.href);url.searchParams.delete("invite");window.history.replaceState({},"",url);setFriendInviteResolved(true);setFriendInvitePreview(null);};
   const acceptPersonalInvite=async()=>{if(!accountSnapshot||!friendStore||!friendInviteToken)return;setFriendInviteBusy(true);setFriendInviteError("");try{await friendStore.acceptInvitation(accountSnapshot,friendInviteToken);await refreshFriends();clearInviteUrl();setSheet("invite");}catch(error){setFriendInviteError(error instanceof FriendError?error.message:"The invitation could not be accepted.");}finally{setFriendInviteBusy(false);}};
 
-  if (!hydrated || !owner || !viewerCharacter || !accountReady || !account || !friendStore) return <main className="loading"><div className="brand-mark">p</div></main>;
+  if (!hydrated || !owner || !viewerCharacter || !accountReady || !account || !friendStore) return <main className="loading" role="status" aria-label="Loading Pluoto"><div className="brand-mark" aria-hidden="true"/></main>;
 
   if(friendInviteToken&&!friendInviteResolved&&friendInvitePreview&&(!inviteAuthStarted||accountSnapshot))return <FriendInviteLanding preview={friendInvitePreview} signedIn={Boolean(accountSnapshot)} busy={friendInviteBusy} error={friendInviteError} onAuthenticate={()=>{setInviteAuthStarted(true);setForceAccountGate(true);}} onAccept={acceptPersonalInvite} onLater={clearInviteUrl}/>;
-  if(friendInviteToken&&!friendInviteResolved&&!friendInvitePreview&&!friendInviteError)return <main className="loading"><div className="brand-mark">p</div></main>;
+  if(friendInviteToken&&!friendInviteResolved&&!friendInvitePreview&&!friendInviteError)return <main className="loading" role="status" aria-label="Loading Pluoto"><div className="brand-mark" aria-hidden="true"/></main>;
   if(friendInviteToken&&!friendInviteResolved&&friendInviteError)return <div className="friend-invite-gate"><section><p className="eyebrow">INVITATION UNAVAILABLE</p><h1>This link can’t be used.</h1><div className="form-error">{friendInviteError}</div><button className="secondary wide" onClick={clearInviteUrl}>{inviteAuthStarted?"Continue without this invitation":"Go to Pluoto"}</button></section></div>;
 
   if (!isGuest && (state.requiresOnboarding || forceAccountGate || (state.accountRequired&&!accountSnapshot))) return <OnboardingFlow owner={onboardingOwner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount}/>;
@@ -213,15 +229,15 @@ export default function Home() {
       {!isGuest && <InlineBubbleComposer current={owner.bubble} onPublish={publishBubble} onClear={clearBubble} onOpen={()=>setSheet("bubble")}/>} 
     </div>}
 
-    {arranging && <nav className="arrange-controls" aria-label="Arrange controls">
-      <button onClick={cancelArrange}><X size={18}/><span>Cancel</span></button>
-      <button className="primary" onClick={finishArrange}><Check size={18}/><span>Done</span></button>
-    </nav>}
+    {arranging && <><nav className="arrange-controls" aria-label="Arrange controls">
+      <button disabled={arrangeBusy} onClick={cancelArrange}><X size={18}/><span>Cancel</span></button>
+      <button className="primary" disabled={arrangeBusy} onClick={()=>void finishArrange()}><Check size={18}/><span>{arrangeBusy?"Saving…":"Done"}</span></button>
+    </nav>{arrangeError&&<div className="arrange-error" role="alert">{arrangeError}</div>}</>}
 
     {selected && <PersonSheet person={selected} owner={owner} canManage={!isGuest} onEditLand={selected.owner?()=>{setSelected(null);setEditingLand(true);}:undefined} onClose={() => setSelected(null)} onRemove={() => removePerson(selected.id)} onBlock={() => removePerson(selected.id, true)}/>} 
     {sheet === "invite" && accountSnapshot && friendState && <FriendCenter actor={accountSnapshot} state={friendState} store={friendStore} onRefresh={refreshFriends} onClose={closeAll} onPlace={placeFriend} onHide={hideFriend} onRemove={removeFriend} onBlock={blockFriend}/>}
     {sheet === "invite" && accountSnapshot && !friendState && <div className="sheet-backdrop"><section className="bottom-sheet"><button className="sheet-close" onClick={closeAll}><X/></button><p>{friendLoading?"Loading friends…":"Friend service unavailable."}</p></section></div>}
-    {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={async text=>{await publishBubble(text);setSheet(null);}} onClear={async()=>{await clearBubble();setSheet(null);}} onClose={closeAll}/>}
+    {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={async text=>{await publishBubble(text);setSheet(null);}} onClear={clearBubble} onDelete={deleteBubble} onClearAll={clearAllBubbles} onClose={closeAll}/>}
     {sheet === "customize" && <OnboardingFlow editing owner={owner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount} onCancel={closeAll}/>} 
     {editingLand&&<LandEditor person={owner} onSave={saveLand} onCancel={()=>setEditingLand(false)}/>} 
     {showWelcome && !isGuest && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}

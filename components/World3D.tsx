@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { ContactShadows, Html, Line, OrbitControls, RoundedBox } from "@react-three/drei";
-import { BoxGeometry, CanvasTexture, Group, LinearFilter, MathUtils, MeshStandardMaterial, OrthographicCamera, PCFShadowMap, Plane, PlaneGeometry, SRGBColorSpace, Vector3 } from "three";
+import { ContactShadows, Html, Line, OrbitControls } from "@react-three/drei";
+import { BoxGeometry, Group, MathUtils, MeshStandardMaterial, OrthographicCamera, PCFShadowMap, Plane, PlaneGeometry, Vector3 } from "three";
 import type { OrbitControls as Controls } from "three-stdlib";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import type { Person } from "@/lib/types";
@@ -20,11 +20,11 @@ import {
   terrainOccupancyForLand,
   type CharacterPlacement,
 } from "@/lib/world-interactions";
-import { LAND_SIGN_CELL } from "@/lib/scene-layout";
-import { blockedLandCells, characterCellForPerson, landObjectsForPerson } from "@/lib/land-objects";
+import { blockedLandCells, characterCellForPerson, landObjectsForPerson, signCellForPerson, signModelZ } from "@/lib/land-objects";
 import type { LandObject } from "@/lib/types";
 import { CharacterModel, GroundDetailsModel } from "./PlaneModels";
 import { LandObjectInstance } from "./LandObjects3D";
+import { LandSignModel } from "./LandSignModel";
 
 type Props = {
   people: Person[];
@@ -46,9 +46,10 @@ type CharacterDrag = {
 };
 
 const floor = new Plane(new Vector3(0, 1, 0), 0);
-const palette = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2" };
-const sidePalette = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262" };
+const palette = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2", meadow: "#a8c894", clay: "#c99680" };
+const sidePalette = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262", meadow: "#8e795d", clay: "#9b6b5a" };
 const localTiles = Array.from({ length: PLOT_TILES ** 2 }, (_, index) => ({ tileX: index % PLOT_TILES, tileY: Math.floor(index / PLOT_TILES) }));
+const resetZoom = (size: { width: number; height: number }) => Math.min(size.width / 17, size.height / 12);
 
 function CameraRig({ command, interactionActive }: { command: Command; interactionActive: boolean }) {
   const { camera, size, invalidate } = useThree();
@@ -65,7 +66,7 @@ function CameraRig({ command, interactionActive }: { command: Command; interacti
       const target = command.person ? spaceAnchor(command.person, { tileX: 2, tileY: 2 }) : [5, 0, 5];
       controls.target.set(target[0], target[1], target[2]);
       cam.position.set(target[0] + CAMERA_OFFSET[0], target[1] + CAMERA_OFFSET[1], target[2] + CAMERA_OFFSET[2]);
-      cam.zoom = command.kind === "focus" ? Math.min(size.width / 8, size.height / 7) : Math.min(size.width / 17, size.height / 12);
+      cam.zoom = command.kind === "focus" ? Math.min(size.width / 8, size.height / 7) : resetZoom(size);
       cam.lookAt(controls.target);
     }
     cam.updateProjectionMatrix();
@@ -121,6 +122,8 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
 }) {
   const root = useRef<Group>(null);
   const body = useRef<Group>(null);
+  const bubble = useRef<HTMLButtonElement>(null);
+  const bubbleScale = useRef(0);
   const { invalidate } = useThree();
   const seed = useMemo(() => [...person.id].reduce((total, char) => total + char.charCodeAt(0), 0), [person.id]);
   const initialWanderDelay = useMemo(() => randomWanderDelay(true), [person.id]);
@@ -132,15 +135,24 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
   });
   const lastLanding = useRef(landingPulse);
   const landingAt = useRef(-10);
+  const [bubbleExpanded, setBubbleExpanded] = useState(false);
   const placementKey = `${placement.landId}:${placement.tileX},${placement.tileY}`;
 
   useLayoutEffect(() => {
     const x = placement.tileX + .5;
     const z = placement.tileY + .5;
-    motion.current = { ...motion.current, x, z, fromX: x, fromZ: z, toX: x, toZ: z, moving: false };
+    motion.current = { ...motion.current, x, z, fromX: x, fromZ: z, toX: x, toZ: z, moving: false, heading: .28 };
     root.current?.position.set(x, 0, z);
+    if (body.current) body.current.rotation.y = .28;
   }, [placementKey]);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera, size }) => {
+    if (bubble.current) {
+      const scale = Math.min(1, (camera as OrthographicCamera).zoom / resetZoom(size));
+      if (Math.abs(scale - bubbleScale.current) > .001) {
+        bubble.current.style.transform = `scale(${scale})`;
+        bubbleScale.current = scale;
+      }
+    }
     const group = root.current;
     const character = body.current;
     if (!group || !character || dragging) return;
@@ -182,42 +194,31 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
     <mesh position={[0, .015, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <circleGeometry args={[.3, 28]}/><meshBasicMaterial color="#455648" transparent opacity={dragging ? .1 : .18}/>
     </mesh>
-    <group ref={body}><CharacterModel person={person}/>{person.bubble&&<Html position={[0,person.species==='rabbit'?1.48:person.species==='turtle'?1.05:1.3,0]} zIndexRange={[35,15]} transform={false}><div className="space3d-bubble-anchor"><button className="space3d-bubble" onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>{event.stopPropagation();onClick();}} onClick={event=>event.stopPropagation()}>{person.bubble}</button></div></Html>}</group>
-    {showName && <Html position={[0, 1.2, 0]} center zIndexRange={[36, 16]}><div className="character-name-label">{person.nickname}</div></Html>}
+    <group ref={body}><CharacterModel person={person}/></group>
+    {person.bubble&&<Html position={[0,person.species==='rabbit'?1.27:person.species==='turtle'?.92:1.13,0]} zIndexRange={[35,15]} transform={false}><div className="space3d-bubble-anchor"><button ref={bubble} className={`space3d-bubble ${bubbleExpanded?"expanded":""}`} aria-expanded={bubbleExpanded} onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();setBubbleExpanded(value=>!value);}}>{person.bubble}</button></div></Html>}
+    {showName && <Html position={[0, -.17, 0]} center zIndexRange={[36, 16]}><div className="character-name-label">{person.nickname}</div></Html>}
     <CharacterPuff active={returning}/>
   </group>;
 }
 
-function useSignText(nickname:string) {
-  const texture=useMemo(()=>{
-    const canvas=document.createElement("canvas");canvas.width=512;canvas.height=160;
-    const context=canvas.getContext("2d")!;context.clearRect(0,0,canvas.width,canvas.height);
-    context.fillStyle="#102b49";context.font="800 82px Manrope, sans-serif";context.textAlign="center";context.textBaseline="middle";
-    let label=nickname.trim()||"Pluoto";
-    while(label.length>1&&context.measureText(label).width>430)label=label.slice(0,-1);
-    if(label!==nickname.trim())label=`${label.trimEnd()}…`;
-    context.fillText(label,256,82);
-    const result=new CanvasTexture(canvas);result.colorSpace=SRGBColorSpace;result.minFilter=LinearFilter;result.needsUpdate=true;return result;
-  },[nickname]);
-  useEffect(()=>()=>texture.dispose(),[texture]);
-  return texture;
-}
-
 function LandSign({ person, arranging, onFocus }: { person: Person; arranging: boolean; onFocus: () => void }) {
-  const text=useSignText(person.nickname);
   const interactive=!arranging&&!person.owner;
-  return <group position={[LAND_SIGN_CELL.tileX+.5,0,LAND_SIGN_CELL.tileY+.5]} rotation={[0,Math.PI/4,0]}
+  const sign = signCellForPerson(person);
+  const ownerLabel = useRef<HTMLSpanElement>(null);
+  const ownerLabelScale = useRef(0);
+  useFrame(({ camera, size }) => {
+    if (!ownerLabel.current) return;
+    const scale = Math.min(1.15 ** 6, (camera as OrthographicCamera).zoom / resetZoom(size));
+    if (Math.abs(scale - ownerLabelScale.current) > .001) {
+      ownerLabel.current.style.transform = `scale(${scale})`;
+      ownerLabelScale.current = scale;
+    }
+  });
+  return <group position={[sign.tileX+.5,0,signModelZ(sign)]} rotation={[0,Math.PI/4,0]}
     onPointerDown={interactive?event=>event.stopPropagation():undefined}
     onClick={interactive?event=>{event.stopPropagation();onFocus();}:undefined}>
-    {[-.31,.31].map(x=><mesh key={x} position={[x,.18,0]} castShadow receiveShadow><boxGeometry args={[.075,.36,.075]}/><meshStandardMaterial color="#95633f" roughness={.92}/></mesh>)}
-    <RoundedBox position={[0,.53,0]} args={[1,.46,.12]} radius={.07} smoothness={3} castShadow receiveShadow><meshStandardMaterial color="#b88457" roughness={.9}/></RoundedBox>
-    <RoundedBox position={[0,.53,.072]} args={[.9,.34,.035]} radius={.045} smoothness={3}><meshStandardMaterial color="#fff2d9" roughness={.88}/></RoundedBox>
-    <mesh position={[0,.53,.094]}><planeGeometry args={[.82,.27]}/><meshBasicMaterial map={text} transparent toneMapped={false}/></mesh>
-    {person.owner&&<group position={[0,.9,.02]}>
-      <RoundedBox args={[.23,.23,.07]} radius={.06} smoothness={3} castShadow><meshStandardMaterial color="#173b5c" roughness={.88}/></RoundedBox>
-      <mesh position={[0,.035,.043]} rotation={[0,0,Math.PI/4]}><boxGeometry args={[.105,.105,.025]}/><meshBasicMaterial color="#fff2d9"/></mesh>
-      <mesh position={[0,-.045,.045]}><boxGeometry args={[.115,.09,.025]}/><meshBasicMaterial color="#fff2d9"/></mesh>
-    </group>}
+    <LandSignModel nickname={person.nickname}/>
+    {person.owner&&<Html position={[0,.94,.12]} center transform={false} zIndexRange={[8,5]}><span ref={ownerLabel} className="owner-land-label">You</span></Html>}
     <Html position={[0,.53,.11]} center zIndexRange={[4,1]}>
       {person.owner?<span className="space3d-accessible" aria-label={`${person.nickname}'s home`}/>:<button className="space3d-accessible" tabIndex={arranging?-1:0} onClick={onFocus} aria-label={`Focus ${person.nickname}'s land`}/>}
     </Html>

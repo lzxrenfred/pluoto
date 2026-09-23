@@ -50,6 +50,17 @@ class LocalBubbleStore {
     const state = { active: null, archive: previous.active ? [{ id: crypto.randomUUID(), text: previous.active.text, createdAt: previous.active.createdAt, expiredAt: now, reason: "cleared" as const }, ...previous.archive] : previous.archive };
     this.write(actor.userId, state); return state;
   }
+  async remove(actor: AccountSnapshot, id: string) {
+    const previous=await this.load(actor);
+    const state={...previous,archive:previous.archive.filter(item=>item.id!==id)};
+    this.write(actor.userId,state);return state;
+  }
+  async clearAll(actor: AccountSnapshot) {
+    const previous = await this.load(actor);
+    const state: BubbleState = { active: previous.active, archive: [] };
+    this.write(actor.userId, state);
+    return state;
+  }
   subscribe(actor: AccountSnapshot, onChange: () => void) {
     this.channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(LOCAL_KEY);
     const message = (event: MessageEvent<string>) => { if (event.data === actor.userId) onChange(); };
@@ -72,6 +83,8 @@ class SupabaseBubbleStore {
   async load(_actor: AccountSnapshot) { return this.rpc<BubbleState>("bubble_state"); }
   async publish(_actor: AccountSnapshot, text: string) { return this.rpc<BubbleState>("publish_bubble", { p_text: text.trim().slice(0, 80) }); }
   async clear(_actor: AccountSnapshot) { return this.rpc<BubbleState>("clear_bubble"); }
+  async remove(_actor: AccountSnapshot, id: string) { return this.rpc<BubbleState>("delete_bubble_log",{p_id:id}); }
+  async clearAll(_actor: AccountSnapshot) { return this.rpc<BubbleState>("clear_all_bubbles"); }
   subscribe(actor: AccountSnapshot, onChange: () => void) {
     this.channels = ["bubbles", "bubble_archive"].map(table => this.client.channel(`bubble:${table}:${actor.userId}`).on("postgres_changes", { event: "*", schema: "public", table, filter: `owner_id=eq.${actor.userId}` }, onChange).subscribe());
     const focus = () => onChange(); const visible = () => { if (!document.hidden) onChange(); };

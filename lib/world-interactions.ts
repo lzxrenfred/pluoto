@@ -2,7 +2,7 @@ import type { Person } from "./types";
 import { PLOT_TILES, isSlotFree, type PlotPosition, type TilePosition } from "./world";
 
 export const CHARACTER_DRAG_THRESHOLD = 6;
-export const CHARACTER_RETURN_MS = 3 * 60 * 1000;
+export const CHARACTER_RETURN_MS = 8 * 1000;
 
 export type CharacterPlacement = TilePosition & {
   landId: string;

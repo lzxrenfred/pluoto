@@ -2,6 +2,7 @@
 import { RoundedBox } from '@react-three/drei';
 import { ExtrudeGeometry, MeshStandardMaterial, Shape } from 'three';
 import type { Person } from '@/lib/types';
+import { accessoryColorFor, selectedAccessories } from '@/lib/customization';
 
 const makeMaterial = (color:string, flatShading = false) => new MeshStandardMaterial({color,roughness:.9,metalness:0,flatShading});
 const materials = {
@@ -11,7 +12,7 @@ const materials = {
   leafDark:makeMaterial('#5f945c',true), leaf:makeMaterial('#78a962',true), leafLight:makeMaterial('#99bd72',true),
   grass:makeMaterial('#75a45f',true), flower:makeMaterial('#fff7dc'), flowerGold:makeMaterial('#e9bc5b'), coral:makeMaterial('#dc745e'),
 };
-const houseColors = {coral:'#df7963',sage:'#73946d',blue:'#7394ae',honey:'#d9a760'} as const;
+const houseColors = {coral:'#df7963',sage:'#73946d',blue:'#7394ae',honey:'#d9a760',rose:'#c9859c',mint:'#85b5a0'} as const;
 type MaterialName = keyof typeof materials;
 type BlockProps = {position?:[number,number,number];size:[number,number,number];material:MaterialName;rotation?:[number,number,number];radius?:number};
 function Block({position,size,material,rotation,radius}:BlockProps) {
@@ -34,20 +35,20 @@ function StudioModel({houseColor}:{houseColor:keyof typeof houseColors}) {
     <Block position={[-.28,.51,.735]} size={[.55,.42,.045]} material="glass" radius={.025}/><Block position={[-.28,.51,.768]} size={[.045,.42,.018]} material="wall" radius={.01}/><Block position={[.36,.4,.735]} size={[.3,.64,.06]} material="darkWood" radius={.035}/><Block position={[.36,.06,.91]} size={[.48,.12,.3]} material="stone" radius={.04}/>
   </group>;
 }
-function KioskModel() {
+function KioskModel({houseColor}:{houseColor:keyof typeof houseColors}) {
   return <group>
-    <Block position={[0,.07,0]} size={[1.7,.14,1.5]} material="stoneWarm" radius={.055}/><Block position={[0,.48,-.05]} size={[1.35,.82,1.08]} material="dark" radius={.045}/><Block position={[0,.94,-.05]} size={[1.55,.14,1.28]} material="wall" radius={.035}/>
+    <Block position={[0,.07,0]} size={[1.7,.14,1.5]} material="stoneWarm" radius={.055}/><Block position={[0,.48,-.05]} size={[1.35,.82,1.08]} material="dark" radius={.045}/><RoundedBox position={[0,.94,-.05]} args={[1.55,.14,1.28]} radius={.035} smoothness={2} castShadow><meshStandardMaterial color={houseColors[houseColor]}/></RoundedBox>
     <Block position={[0,.58,.515]} size={[1.12,.4,.055]} material="wallShade" radius={.02}/><Block position={[0,.43,.59]} size={[1.22,.18,.38]} material="wood" radius={.035}/><Block position={[-.45,.2,.45]} size={[.1,.42,.1]} material="darkWood" radius={.025}/><Block position={[.45,.2,.45]} size={[.1,.42,.1]} material="darkWood" radius={.025}/>
     <Pebble position={[.28,.58,.71]} scale={[.12,.05,.12]} material="white"/><Block position={[.28,.69,.71]} size={[.1,.2,.1]} material="white" radius={.025}/>
   </group>;
 }
-function TentModel() {
-  return <group><Block position={[0,.05,0]} size={[1.7,.1,1.5]} material="stoneWarm" radius={.05}/><mesh position={[0,.61,0]} rotation={[0,Math.PI/4,0]} material={materials.coral} castShadow receiveShadow><coneGeometry args={[.88,1.2,4]}/></mesh><mesh position={[0,.46,.48]} rotation={[Math.PI/2,0,0]} material={materials.darkWood} castShadow><coneGeometry args={[.25,.5,3]}/></mesh></group>;
+function TentModel({houseColor}:{houseColor:keyof typeof houseColors}) {
+  return <group><Block position={[0,.05,0]} size={[1.7,.1,1.5]} material="stoneWarm" radius={.05}/><mesh position={[0,.61,0]} rotation={[0,Math.PI/4,0]} castShadow receiveShadow><coneGeometry args={[.88,1.2,4]}/><meshStandardMaterial color={houseColors[houseColor]}/></mesh><mesh position={[0,.46,.48]} rotation={[Math.PI/2,0,0]} material={materials.darkWood} castShadow><coneGeometry args={[.25,.5,3]}/></mesh></group>;
 }
 export function HouseModel({home,houseColor='coral'}: {home:Person['home'];houseColor?:NonNullable<Person['houseColor']>}) {
   if(home==='studio') return <StudioModel houseColor={houseColor}/>;
-  if(home==='kiosk') return <KioskModel/>;
-  if(home==='tent') return <TentModel/>;
+  if(home==='kiosk') return <KioskModel houseColor={houseColor}/>;
+  if(home==='tent') return <TentModel houseColor={houseColor}/>;
   const roofMaterial:MaterialName = home==='cabin'?'leafDark':'roof';
   const customRoof=houseColors[houseColor];
   const roofAngle=Math.atan(.5/.81);
@@ -171,22 +172,28 @@ function TurtleCharacter({person}:{person:Person}) {
     <Pebble position={[-.065,.37,.47]} scale={[.02,.028,.015]} material="dark"/><Pebble position={[.065,.37,.47]} scale={[.02,.028,.015]} material="dark"/>
   </group>;
 }
-function TurtleAccessory({accessory}:{accessory:Person['accessory']}) {
-  if(accessory==='glasses')return <group position={[0,.3,.405]} scale={.52}>{[-.12,.12].map(x=><mesh key={x} position={[x,0,0]}><torusGeometry args={[.09,.018,7,18]}/><primitive object={materials.dark} attach="material"/></mesh>)}<Block position={[0,0,0]} size={[.08,.018,.018]} material="dark" radius={.006}/></group>;
-  if(accessory==='headphones')return <group position={[0,.35,.29]} scale={.58}><mesh><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} material="coral"/>)}</group>;
-  if(accessory==='cap')return <group position={[0,.43,.28]} scale={.58}><mesh scale={[.31,.11,.27]}><sphereGeometry args={[1,14,8,0,Math.PI*2,0,Math.PI/2]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[0,.01,.27]} size={[.32,.035,.18]} material="coral" radius={.045}/></group>;
-  if(accessory==='scarf')return <group position={[0,.22,.3]} scale={.64}><mesh rotation={[Math.PI/2,0,0]}><torusGeometry args={[.2,.035,8,20]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[.13,-.12,.18]} size={[.09,.28,.045]} material="coral" radius={.025}/></group>;
-  return <group position={[.27,.17,.18]} scale={.64}><RoundedBox args={[.22,.27,.1]} radius={.05} smoothness={2} material={materials.coral} castShadow/><mesh position={[0,.2,0]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.12,.018,7,18,Math.PI]}/><primitive object={materials.darkWood} attach="material"/></mesh></group>;
+function TurtleAccessory({accessory,color}:{accessory:Exclude<Person['accessory'],'none'>;color:string}) {
+  if(accessory==='glasses')return <group position={[0,.3,.405]} scale={.52}>{[-.12,.12].map(x=><mesh key={x} position={[x,0,0]}><torusGeometry args={[.09,.018,7,18]}/><meshStandardMaterial color={color}/></mesh>)}<RoundedBox position={[0,0,0]} args={[.08,.018,.018]} radius={.006}><meshStandardMaterial color={color}/></RoundedBox></group>;
+  if(accessory==='headphones')return <group position={[0,.35,.29]} scale={.58}><mesh><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} color={color}/>)}</group>;
+  if(accessory==='cap')return <group position={[0,.43,.28]} scale={.58}><mesh scale={[.31,.11,.27]}><sphereGeometry args={[1,14,8,0,Math.PI*2,0,Math.PI/2]}/><meshStandardMaterial color={color}/></mesh><RoundedBox position={[0,.01,.27]} args={[.32,.035,.18]} radius={.025}><meshStandardMaterial color={color}/></RoundedBox></group>;
+  if(accessory==='scarf')return <group position={[0,.22,.3]} scale={.64}><mesh rotation={[Math.PI/2,0,0]}><torusGeometry args={[.2,.035,8,20]}/><meshStandardMaterial color={color}/></mesh><RoundedBox position={[.13,-.12,.18]} args={[.09,.28,.045]} radius={.025}><meshStandardMaterial color={color}/></RoundedBox></group>;
+  if(accessory==='bow'||accessory==='flower')return <Pebble position={[.18,.51,.2]} scale={[.15,.09,.05]} color={color}/>;
+  return <group position={[.27,.17,.18]} scale={.64}><RoundedBox args={[.22,.27,.1]} radius={.05} smoothness={2} castShadow><meshStandardMaterial color={color}/></RoundedBox><mesh position={[0,.2,0]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.12,.018,7,18,Math.PI]}/><primitive object={materials.darkWood} attach="material"/></mesh></group>;
+}
+function AccessoryPiece({person,accessory}:{person:Person;accessory:Exclude<Person['accessory'],'none'>}) {
+  const color=accessoryColorFor(person,accessory);
+  if(person.species==='turtle')return <TurtleAccessory accessory={accessory} color={color}/>;
+  if(accessory==='glasses')return <group position={[0,.67,.285]}>{[-.12,.12].map(x=><mesh key={x} position={[x,0,0]}><torusGeometry args={[.09,.018,7,18]}/><meshStandardMaterial color={color}/></mesh>)}<RoundedBox position={[0,0,0]} args={[.08,.018,.018]} radius={.006}><meshStandardMaterial color={color}/></RoundedBox></group>;
+  if(accessory==='headphones')return <group position={[0,.73,.02]}><mesh><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} color={color}/>)}</group>;
+  if(accessory==='cap')return <group position={[0,.91,.04]}><mesh scale={[.31,.11,.27]}><sphereGeometry args={[1,14,8,0,Math.PI*2,0,Math.PI/2]}/><meshStandardMaterial color={color}/></mesh><RoundedBox position={[0,.01,.27]} args={[.32,.035,.18]} radius={.025}><meshStandardMaterial color={color}/></RoundedBox></group>;
+  if(accessory==='scarf')return <group position={[0,.47,.02]}><mesh rotation={[Math.PI/2,0,0]}><torusGeometry args={[.2,.035,8,20]}/><meshStandardMaterial color={color}/></mesh><RoundedBox position={[.13,-.12,.18]} args={[.09,.28,.045]} radius={.025}><meshStandardMaterial color={color}/></RoundedBox></group>;
+  if(accessory==='bow')return <group position={[.21,.97,.16]}><Pebble position={[-.08,0,0]} scale={[.11,.07,.05]} color={color}/><Pebble position={[.08,0,0]} scale={[.11,.07,.05]} color={color}/><Pebble position={[0,0,.04]} scale={[.045,.045,.04]} material="flowerGold"/></group>;
+  if(accessory==='flower')return <group position={[.22,.99,.18]}>{Array.from({length:5},(_,index)=>{const angle=index*Math.PI*2/5;return <Pebble key={index} position={[Math.cos(angle)*.08,Math.sin(angle)*.08,0]} scale={[.07,.07,.04]} color={color}/>;})}<Pebble position={[0,0,.04]} scale={[.055,.055,.045]} material="flowerGold"/></group>;
+  return <group position={[.28,.35,.02]}><RoundedBox args={[.22,.27,.1]} radius={.05} smoothness={2} castShadow><meshStandardMaterial color={color}/></RoundedBox><mesh position={[0,.2,0]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.12,.018,7,18,Math.PI]}/><primitive object={materials.darkWood} attach="material"/></mesh></group>;
 }
 function CharacterAccessory({person}:{person:Person}) {
-  const accessory=person.accessory;
-  if(accessory==='none')return null;
-  if(person.species==='turtle')return <TurtleAccessory accessory={accessory}/>;
-  if(accessory==='glasses')return <group position={[0,.67,.285]}>{[-.12,.12].map(x=><mesh key={x} position={[x,0,0]}><torusGeometry args={[.09,.018,7,18]}/><primitive object={materials.dark} attach="material"/></mesh>)}<Block position={[0,0,0]} size={[.08,.018,.018]} material="dark" radius={.006}/></group>;
-  if(accessory==='headphones')return <group position={[0,.73,.02]}><mesh><torusGeometry args={[.31,.035,8,22,Math.PI]}/><primitive object={materials.dark} attach="material"/></mesh>{[-.31,.31].map(x=><Pebble key={x} position={[x,-.03,.02]} scale={[.065,.12,.09]} material="coral"/>)}</group>;
-  if(accessory==='cap')return <group position={[0,.91,.04]}><mesh scale={[.31,.11,.27]}><sphereGeometry args={[1,14,8,0,Math.PI*2,0,Math.PI/2]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[0,.01,.27]} size={[.32,.035,.18]} material="coral" radius={.045}/></group>;
-  if(accessory==='scarf')return <group position={[0,.47,.02]}><mesh rotation={[Math.PI/2,0,0]}><torusGeometry args={[.2,.035,8,20]}/><primitive object={materials.coral} attach="material"/></mesh><Block position={[.13,-.12,.18]} size={[.09,.28,.045]} material="coral" radius={.025}/></group>;
-  return <group position={[.28,.35,.02]}><RoundedBox args={[.22,.27,.1]} radius={.05} smoothness={2} material={materials.coral} castShadow/><mesh position={[0,.2,0]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.12,.018,7,18,Math.PI]}/><primitive object={materials.darkWood} attach="material"/></mesh></group>;
+  const selected=selectedAccessories(person);
+  return <>{selected.map(accessory=><AccessoryPiece key={accessory} person={person} accessory={accessory}/>)}</>;
 }
 
 export function outfitFit(species:Person['species']) {
@@ -197,10 +204,13 @@ export function outfitFit(species:Person['species']) {
 function Outfit({person}:{person:Person}) {
   if((person.outfit??'none')==='none')return null;
   const fit=outfitFit(person.species);
+  const shirt=person.outfit==='sunny'?'#e9bc5b':person.outfit==='striped'?'#f4eee2':'#5f789c';
   return <group>
-    <RoundedBox position={fit.position} args={fit.scale} radius={.08} smoothness={3} castShadow receiveShadow><meshStandardMaterial color="#5f789c" roughness={.92}/></RoundedBox>
-    {[-1,1].map(side=><Pebble key={side} position={[side*.25,.34,.12]} scale={[.085,.11,.09]} color="#5f789c"/>)}
-    <mesh position={[0,.455,.265]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.09,.018,8,18,Math.PI]}/><meshStandardMaterial color="#d8e0eb" roughness={.9}/></mesh>
+    <RoundedBox position={fit.position} args={fit.scale} radius={.08} smoothness={3} castShadow receiveShadow><meshStandardMaterial color={shirt} roughness={.92}/></RoundedBox>
+    {[-1,1].map(side=><Pebble key={side} position={[side*.25,.34,.12]} scale={[.085,.11,.09]} color={shirt}/>)}
+    {person.outfit==='striped'&&[.24,.33,.42].map(y=><RoundedBox key={y} position={[0,y,.274]} args={[.34,.025,.018]} radius={.008}><meshStandardMaterial color="#7394ae"/></RoundedBox>)}
+    {person.outfit==='sunny'&&<Pebble position={[0,.36,.28]} scale={[.065,.065,.02]} color="#fff8e9"/>}
+    {person.outfit==='tee'&&<mesh position={[0,.455,.265]} rotation={[Math.PI/2,0,0]}><torusGeometry args={[.09,.018,8,18,Math.PI]}/><meshStandardMaterial color="#d8e0eb" roughness={.9}/></mesh>}
   </group>;
 }
 
@@ -211,6 +221,8 @@ export function CharacterModel({person}: {person:Person}) {
   const bear=person.species==='bear';
   const penguin=person.species==='penguin';
   const dog=person.species==='dog';
+  const deer=person.species==='deer';
+  const koala=person.species==='koala';
   if(person.species==='turtle') return <group rotation={[0,.28,0]}><TurtleCharacter person={person}/><Outfit person={person}/><CharacterAccessory person={person}/></group>;
   return <group rotation={[0,.28,0]} scale={rabbit?.78:.82}>
     <Pebble position={[0,.3,0]} scale={[.25,.29,.2]} color={penguin?'#263545':person.color}/><Pebble position={[0,.31,.17]} scale={[.17,.2,.08]} color={person.accent}/><Pebble position={[0,.66,.035]} scale={[.32,.29,.25]} color={penguin?'#263545':person.color}/>
@@ -220,6 +232,8 @@ export function CharacterModel({person}: {person:Person}) {
       <Pebble position={[side*.13,.095,.1]} scale={[.115,.085,.15]} color={person.accent}/><Pebble position={[side*.2,.31,.08]} scale={[.075,.15,.09]} color={person.color}/>
     </group>)}
     <Face accent={person.accent}/>
+    {deer&&[-1,1].map(side=><group key={`antler-${side}`}><mesh position={[side*.21,1.12,0]} rotation={[0,0,side*.16]}><cylinderGeometry args={[.025,.04,.33,6]}/><meshStandardMaterial color="#9a775c"/></mesh><mesh position={[side*.28,1.2,0]} rotation={[0,0,side*.8]}><cylinderGeometry args={[.018,.025,.18,6]}/><meshStandardMaterial color="#9a775c"/></mesh></group>)}
+    {koala&&<><Pebble position={[-.3,.72,.03]} scale={[.14,.15,.08]} color={person.color}/><Pebble position={[.3,.72,.03]} scale={[.14,.15,.08]} color={person.color}/><Pebble position={[0,.59,.31]} scale={[.075,.11,.07]} color="#4e493f"/></>}
     {penguin&&<mesh position={[0,.58,.292]} rotation={[Math.PI/2,0,0]} castShadow><coneGeometry args={[.055,.14,4]}/><meshStandardMaterial color="#e5aa4d" roughness={.9}/></mesh>}
     {rabbit?<Pebble position={[.2,.28,-.18]} scale={[.11,.11,.11]} color={person.accent}/>:<><Pebble position={[.23,.25,-.13]} scale={[cat?.1:.16,cat?.29:.25,.11]} color={person.color}/><Pebble position={[.32,.42,-.18]} scale={[cat?.08:.14,cat?.19:.2,.1]} color={person.accent}/></>}
     <CharacterAccessory person={person}/>

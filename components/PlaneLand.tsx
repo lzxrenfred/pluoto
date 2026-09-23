@@ -4,7 +4,7 @@ import type { PointerEvent } from 'react';
 import type { Person } from '@/lib/types';
 import { exteriorFaces, spaceTiles, tileToIso, LAND_DEPTH, WORLD_ORIGIN_X, WORLD_ORIGIN_Y, WORLD_STAGE_WIDTH, WORLD_STAGE_HEIGHT } from '@/lib/world';
 
-const colors = { grass: '#a7d38c', stone: '#d9d9d9', earth: '#dfb581', sand: '#f3e6d7' };
+const colors = { grass: '#a7d38c', stone: '#d9d9d9', earth: '#dfb581', sand: '#f3e6d7', meadow: '#a8c894', clay: '#c99680' };
 function point(x: number, y: number, z = 0) {
   const p = tileToIso({ tileX: x, tileY: y }, z);
   return `${WORLD_ORIGIN_X + p.x},${WORLD_ORIGIN_Y + p.y}`;

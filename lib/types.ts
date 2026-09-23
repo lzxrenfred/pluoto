@@ -1,11 +1,11 @@
 import type { PlotPosition } from "./world";
 
-export type Species = "fox" | "rabbit" | "bear" | "cat" | "penguin" | "turtle" | "dog";
-export type Ground = "grass" | "sand" | "stone" | "earth";
-export type Accessory = "none" | "glasses" | "headphones" | "cap" | "scarf" | "tote";
-export type Outfit = "none" | "tee";
-export type HouseColor = "coral" | "sage" | "blue" | "honey";
-export type DecorationPreset = "garden" | "calm" | "social";
+export type Species = "fox" | "rabbit" | "bear" | "cat" | "penguin" | "turtle" | "dog" | "deer" | "koala";
+export type Ground = "grass" | "sand" | "stone" | "earth" | "meadow" | "clay";
+export type Accessory = "none" | "glasses" | "headphones" | "cap" | "scarf" | "tote" | "bow" | "flower";
+export type Outfit = "none" | "tee" | "striped" | "sunny";
+export type HouseColor = "coral" | "sage" | "blue" | "honey" | "rose" | "mint";
+export type DecorationPreset = "garden" | "calm" | "social" | "bare" | "custom";
 export type LandRotation = 0 | 90 | 180 | 270;
 export type LandModelId =
   | "house.cottage" | "house.studio" | "house.cabin" | "house.tent" | "house.kiosk"
@@ -20,12 +20,18 @@ export type Person = PlotPosition & {
   color: string;
   accent: string;
   accessory: Accessory;
+  accessories?: Exclude<Accessory, "none">[];
+  accessoryColor?: string;
+  accessoryColors?: Partial<Record<Exclude<Accessory, "none">, string>>;
   outfit?: Outfit;
   ground: Ground;
   home: "cottage" | "studio" | "cabin" | "tent" | "kiosk";
   houseColor?: HouseColor;
   decorationPreset?: DecorationPreset;
   landObjects?: LandObject[];
+  savedCustomLand?: { objects: LandObject[]; signPosition?: { tileX: number; tileY: number }; scene: Person["scene"] };
+  signPosition?: { tileX: number; tileY: number };
+  signPositionVersion?: 2;
   pills: string[];
   bubble?: string;
   bubbleCreatedAt?: number;

@@ -28,27 +28,55 @@ export function footprintCells(object: LandObject) {
   return Array.from({ length: width * height }, (_, index) => ({ tileX: object.tileX + index % width, tileY: object.tileY + Math.floor(index / width) }));
 }
 
+function freePosition(objects: LandObject[], object: LandObject, sign: { tileX: number; tileY: number }) {
+  const occupied = new Set(objects.filter(item => item.id !== object.id).flatMap(item => footprintCells(item).map(cell => `${cell.tileX},${cell.tileY}`)));
+  occupied.add(`${sign.tileX},${sign.tileY}`);
+  for (let tileY = 4; tileY >= 0; tileY -= 1) for (let tileX = 4; tileX >= 0; tileX -= 1) {
+    const candidate = { ...object, tileX, tileY };
+    if (footprintCells(candidate).every(cell => !occupied.has(`${cell.tileX},${cell.tileY}`)) && isLandObjectPlacementValid(objects, candidate, object.id, sign)) return candidate;
+  }
+  return null;
+}
+
 export function landObjectsForPerson(person: Person): LandObject[] {
-  if (person.landObjects?.length) return person.landObjects.map(item => ({ ...item }));
+  const sign = signCellForPerson(person);
+  if (person.landObjects) {
+    const result = person.landObjects.filter(item => !(person.decorationPreset === "social" && item.modelId === "tree.round" && item.tileX === 4 && item.tileY === 4)).map(item => ({ ...item }));
+    if (person.signPositionVersion !== 2 && (!person.signPosition || (person.signPosition.tileX === 2 && person.signPosition.tileY === 4))) {
+      result.forEach((item, index) => {
+        if (footprintCells(item).some(cell => cell.tileX === sign.tileX && cell.tileY === sign.tileY)) {
+          result[index] = freePosition(result, item, sign) ?? item;
+        }
+      });
+    }
+    return result;
+  }
   const house = houseCells[person.scene];
   const result: LandObject[] = [{ id: `legacy-${person.id}-home`, modelId: homeModel(person.home), tileX: house.tileX, tileY: house.tileY, rotation: 0 }];
   placements[person.scene].forEach((item, index) => {
     const modelId: LandModelId = item.kind === "tree" ? `tree.${item.variant === "tall" ? "tall" : item.variant === "blossom" ? "blossom" : "round"}` : item.kind;
     let candidate: LandObject = { id: `legacy-${person.id}-${item.kind}-${index}`, modelId, tileX: item.tileX, tileY: item.tileY, rotation: 0 };
-    if (!isLandObjectPlacementValid(result, candidate)) {
-      outer: for (let tileY = 0; tileY < 5; tileY += 1) for (let tileX = 0; tileX < 5; tileX += 1) {
-        const moved = { ...candidate, tileX, tileY };
-        if (isLandObjectPlacementValid(result, moved)) { candidate = moved; break outer; }
-      }
-    }
+    if (footprintCells(candidate).some(cell => cell.tileX === sign.tileX && cell.tileY === sign.tileY) || !isLandObjectPlacementValid(result, candidate, undefined, sign)) candidate = freePosition(result, candidate, sign) ?? candidate;
     result.push(candidate);
   });
   return result;
 }
 
-export function validateLandObjects(input: LandObject[]) {
+export function signCellForPerson(person: Pick<Person, "signPosition" | "signPositionVersion">) {
+  const { tileX, tileY } = person.signPosition ?? LAND_SIGN_CELL;
+  if (person.signPositionVersion !== 2 && tileX === 2 && tileY === 4) return LAND_SIGN_CELL;
+  return Number.isInteger(tileX) && Number.isInteger(tileY) && tileX >= 0 && tileY >= 0 && tileX < 5 && tileY < 5 ? { tileX, tileY } : LAND_SIGN_CELL;
+}
+
+export function signModelZ(sign: { tileY: number }) {
+  return sign.tileY + (sign.tileY === LAND_SIGN_CELL.tileY ? .62 : .5);
+}
+
+export function validateLandObjects(input: LandObject[], signPosition: {tileX:number;tileY:number} = LAND_SIGN_CELL) {
+  if (![signPosition.tileX,signPosition.tileY].every(value=>Number.isInteger(value)&&value>=0&&value<5)) throw new Error("The name banner must stay on your land.");
   const ids = new Set<string>();
-  const occupied = new Set([`${LAND_SIGN_CELL.tileX},${LAND_SIGN_CELL.tileY}`]);
+  const occupied = new Set([`${signPosition.tileX},${signPosition.tileY}`]);
+  if (input.filter(item => item.modelId.startsWith("house.")).length > 1) throw new Error("Choose just one home for your land.");
   const normalized = input.map((item): LandObject => ({ ...item, tileX: Number(item.tileX), tileY: Number(item.tileY), rotation: Number(item.rotation) as LandRotation }));
   for (const item of normalized) {
     if (!item.id || item.id.length > 80 || ids.has(item.id)) throw new Error("Every land object needs a unique stable ID.");
@@ -68,12 +96,13 @@ export function validateLandObjects(input: LandObject[]) {
   return normalized;
 }
 
-export function isLandObjectPlacementValid(objects: LandObject[], candidate: LandObject, ignoreId?: string) {
-  try { validateLandObjects([...objects.filter(item => item.id !== ignoreId && item.id !== candidate.id), candidate]); return true; } catch { return false; }
+export function isLandObjectPlacementValid(objects: LandObject[], candidate: LandObject, ignoreId?: string, signPosition: {tileX:number;tileY:number} = LAND_SIGN_CELL) {
+  try { validateLandObjects([...objects.filter(item => item.id !== ignoreId && item.id !== candidate.id), candidate], signPosition); return true; } catch { return false; }
 }
 
 export function blockedLandCells(person: Person) {
-  const cells = new Set<string>([`${LAND_SIGN_CELL.tileX},${LAND_SIGN_CELL.tileY}`]);
+  const sign = signCellForPerson(person);
+  const cells = new Set<string>([`${sign.tileX},${sign.tileY}`]);
   for (const object of landObjectsForPerson(person)) if (solidModels.has(object.modelId)) footprintCells(object).forEach(cell => cells.add(`${cell.tileX},${cell.tileY}`));
   return cells;
 }
