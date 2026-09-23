@@ -9,6 +9,7 @@ import { PILL_GROUPS } from "@/lib/demo";
 import {pillCategoryClass} from "@/lib/pills";
 import type { Accessory, DecorationPreset, Person } from "@/lib/types";
 import { CharacterPreview3D, LandPreview3D } from "./CustomizationPreview3D";
+import { BrandWordmark } from "./BrandWordmark";
 
 const DRAFT_KEY = "pluoto-onboarding-draft-v2";
 const WELCOME = 0, AUTH = 1, CHECK_EMAIL = 2, NAME = 3, CHARACTER = 4, PILLS = 5, LAND = 6, RESET_PASSWORD = 7, RECOVERY_SENT = 8;
@@ -125,7 +126,7 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
   };
 
   const beginRecovery = async () => {
-    if (!/^\S+@\S+\.\S+$/.test(email)) { setError("Enter the email used for your Pluoto account first."); return; }
+    if (!/^\S+@\S+\.\S+$/.test(email)) { setError("Enter the email used for your account first."); return; }
     setBusy(true); setError(""); setErrorCode("");
     try {
       const result = await account.sendPasswordRecovery(email, recoveryCallback());
@@ -181,17 +182,17 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
   return <div className="onboarding-shell">
     <header className="onboarding-header">
       <button disabled={(step === WELCOME || (step === NAME && Boolean(identity))) && !editing} onClick={back} aria-label="Back"><ArrowLeft/></button>
-      <a className="onboarding-wordmark">pluoto</a>
+      <BrandWordmark className="onboarding-wordmark"/>
       {onCancel ? <button onClick={onCancel} aria-label="Close"><X/></button> : <span/>}
     </header>
     {!editing && identity && <div className="onboarding-progress" aria-label={`Customization step ${Math.max(1, step - 2)} of 4`}>{[NAME, CHARACTER, PILLS, LAND].map(value => <i key={value} className={value <= step ? "active" : ""}/>)}</div>}
     <main className={`onboarding-main step-${step}`}>
       {preview && <section className="onboarding-stage">{preview}</section>}
       <section className="onboarding-panel">
-        {step === WELCOME && <div className="welcome-copy"><span className="world-orbit">✦</span><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Create an account, then make a small Character and a corner of the sky that feels like yours.</p><button className="primary wide" onClick={() => { setIntent("create"); go(AUTH); }}>Create account</button><button className="text-button" onClick={() => { setIntent("signin"); go(AUTH); }}>Sign in</button></div>}
+        {step === WELCOME && <div className="welcome-copy"><span className="world-orbit">✦</span><p className="eyebrow brand-eyebrow">WELCOME TO <BrandWordmark/></p><h1>Your people,<br/>in one little world.</h1><p>Create an account, then make a small Character and a corner of the sky that feels like yours.</p><button className="primary wide" onClick={() => { setIntent("create"); go(AUTH); }}>Create account</button><button className="text-button" onClick={() => { setIntent("signin"); go(AUTH); }}>Sign in</button></div>}
         {step === AUTH && <form id="pluoto-auth-form" onSubmit={event => { event.preventDefault(); void authenticate(); }}>
           <p className="eyebrow">{intent === "signin" ? "WELCOME BACK" : "CREATE ACCOUNT"}</p><h1>{intent === "signin" ? "Enter your Plane." : "Keep your little world."}</h1>
-          <p>{intent === "signin" ? "Sign in to restore your Character, land, friends and arrangement." : "Use an email and password. You’ll confirm your email before entering Pluoto."}</p>
+          <p>{intent === "signin" ? "Sign in to restore your Character, land, friends and arrangement." : "Use an email and password. You’ll confirm your email before entering your Plane."}</p>
           <label className="field-label auth-field"><Mail size={18}/><span>Email</span><input autoFocus type="email" name="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/></label>
           <label className="field-label auth-field"><span>Password</span><input type={showPassword ? "text" : "password"} name="password" autoComplete={intent === "signin" ? "current-password" : "new-password"} minLength={MIN_PASSWORD_LENGTH} required value={password} onChange={event => setPassword(event.target.value)} placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}/><button type="button" className="password-toggle" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></label>
           {intent === "create" && <label className="field-label auth-field"><span>Confirm password</span><input type={showPassword ? "text" : "password"} name="confirm-password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/></label>}
@@ -202,9 +203,9 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
           <button type="button" className="text-button" onClick={() => { setIntent(value => value === "signin" ? "create" : "signin"); setPassword(""); setConfirmPassword(""); setError(""); }}>{intent === "signin" ? "Create a new account" : "Already have an account? Sign in"}</button>
         </form>}
         {step === CHECK_EMAIL && <><p className="eyebrow">CHECK YOUR EMAIL</p><h1>Confirm your account.</h1><p>Open the verification link sent to <strong>{email}</strong>. Your choices and invitation will be waiting when you return.</p><button className="resend-button" disabled={cooldown > 0 || busy} onClick={() => void resendConfirmation()}><RotateCcw size={15}/>{cooldown ? `Resend in ${cooldown}s` : "Resend confirmation"}</button><button className="text-button" onClick={() => go(AUTH)}>Use a different email</button></>}
-        {step === RECOVERY_SENT && <><p className="eyebrow">CHECK YOUR EMAIL</p><h1>Reset your password.</h1><p>Open the secure recovery link sent to <strong>{email}</strong>. It keeps the same Pluoto account and all of its world data.</p><button className="secondary wide" onClick={() => go(AUTH)}>Back to sign in</button></>}
+        {step === RECOVERY_SENT && <><p className="eyebrow">CHECK YOUR EMAIL</p><h1>Reset your password.</h1><p>Open the secure recovery link sent to <strong>{email}</strong>. It keeps your account and all of its world data.</p><button className="secondary wide" onClick={() => go(AUTH)}>Back to sign in</button></>}
         {step === RESET_PASSWORD && <><p className="eyebrow">LOCAL RECOVERY</p><h1>Choose a new password.</h1><p>This local-only recovery stands in for the email link Supabase sends.</p><label className="field-label auth-field"><span>New password</span><input autoFocus type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} value={password} onChange={event => setPassword(event.target.value)}/><button type="button" className="password-toggle" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></label><label className="field-label auth-field"><span>Confirm password</span><input type={showPassword ? "text" : "password"} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/></label></>}
-        {step === NAME && <><p className="eyebrow">YOUR NAME</p><h1>What should we call you?</h1><label className="field-label">Nickname<input autoFocus maxLength={18} value={draft.nickname} onChange={event => update({ nickname: event.target.value })} placeholder="e.g. Ren"/></label><p className="onboarding-note">This is what people in your Plane will see.</p></>}
+        {step === NAME && <><p className="eyebrow">YOUR NAME</p><h1>What should we call you?</h1><label className="field-label">Nickname<input autoFocus={!editing} maxLength={18} value={draft.nickname} onChange={event => update({ nickname: event.target.value })} placeholder="e.g. Pluoto"/></label><p className="onboarding-note">This is what people in your Plane will see.</p></>}
         {step === CHARACTER && <>
           <p className="eyebrow">YOUR CHARACTER</p><h1>Make a little you.</h1>
           <h3>Animal</h3><div className="option-grid species-options">{SPECIES.map(item => <button key={item} className={draft.species === item ? "selected" : ""} onClick={() => update({ species: item })}>{item}</button>)}</div>

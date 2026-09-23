@@ -14,9 +14,10 @@ export function LandSignModel({ nickname }: { nickname: string }) {
     context.font = "800 82px Manrope, sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    let label = nickname.trim() || "Pluoto";
+    let label = nickname.trim() || "You";
+    const originalLabel = label;
     while (label.length > 1 && context.measureText(label).width > 430) label = label.slice(0, -1);
-    if (label !== nickname.trim()) label = `${label.trimEnd()}…`;
+    if (label !== originalLabel) label = `${label.trimEnd()}…`;
     context.fillText(label, 256, 82);
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;

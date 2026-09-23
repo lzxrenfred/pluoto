@@ -49,7 +49,7 @@ const floor = new Plane(new Vector3(0, 1, 0), 0);
 const palette = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2", meadow: "#a8c894", clay: "#c99680" };
 const sidePalette = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262", meadow: "#8e795d", clay: "#9b6b5a" };
 const localTiles = Array.from({ length: PLOT_TILES ** 2 }, (_, index) => ({ tileX: index % PLOT_TILES, tileY: Math.floor(index / PLOT_TILES) }));
-const resetZoom = (size: { width: number; height: number }) => Math.min(size.width / 17, size.height / 12);
+const resetZoom = (size: { width: number; height: number }) => Math.min(size.width / 17, size.height / 12) * (size.width <= 680 ? 1.15 ** 3 : 1);
 
 function CameraRig({ command, interactionActive }: { command: Command; interactionActive: boolean }) {
   const { camera, size, invalidate } = useThree();
@@ -590,12 +590,14 @@ export default function World3D(props: Props) {
   }, []);
 
   return <div ref={eventSource} className={`world-viewport world3d ${props.arrangeMode ? "arranging" : ""}`}>
-    <div className="sky-haze"/><div className="cloud cloud-a"/><div className="cloud cloud-c"/>
-    <Canvas orthographic camera={{ position: [17, CAMERA_OFFSET[1], 17], near: .1, far: 100, zoom: 50 }} shadows={{ type: PCFShadowMap }}
+    <div className="sky-haze"/>
+    <div className="cloud cloud-a"/><div className="cloud cloud-b"/><div className="cloud cloud-c"/>
+    <div className="cloud cloud-d"/><div className="cloud cloud-e"/><div className="cloud cloud-f"/>
+    <div className="world3d-scene"><Canvas orthographic camera={{ position: [17, CAMERA_OFFSET[1], 17], near: .1, far: 100, zoom: 50 }} shadows={{ type: PCFShadowMap }}
       eventSource={eventSource as RefObject<HTMLElement>} eventPrefix="client" dpr={[1, 1.6]} frameloop="demand" gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}>
       <Scene {...props} command={command} temporary={temporary} returning={returning} onTemporaryDrop={onTemporaryDrop}
         onFocus={(person) => setCommand((current) => ({ id: current.id + 1, kind: "focus", person }))}/>
-    </Canvas>
+    </Canvas></div>
     <div className="zoom-controls">
       <button aria-label="Zoom out" onClick={() => setCommand((current) => ({ id: current.id + 1, kind: "zoom", amount: .85 }))}><Minus size={18}/></button>
       <button aria-label="Reset view" onClick={() => setCommand((current) => ({ id: current.id + 1, kind: "reset" }))}><RotateCcw size={16}/></button>

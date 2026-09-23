@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Pluoto — My people, around me",
   description: "Friendships, arranged into a little living world in the clouds.",
   manifest: "/manifest.webmanifest",
+  icons: { icon: "/pluoto-logo.png", apple: "/pluoto-logo.png" },
 };
 
 export const viewport: Viewport = {

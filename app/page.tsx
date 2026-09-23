@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Move, Settings, Share2, X } from "lucide-react";
 import { Character } from "@/components/Character";
+import { BrandWordmark } from "@/components/BrandWordmark";
 import { BubbleSheet, GuestJoin, GuestMenu, PersonSheet, ProfileMenu } from "@/components/Sheets";
 import { OnboardingFlow, clearOnboardingDraft } from "@/components/OnboardingFlow";
 import {FriendCenter,FriendInviteLanding} from "@/components/FriendCenter";
@@ -187,19 +188,18 @@ export default function Home() {
   const clearInviteUrl=()=>{const url=new URL(window.location.href);url.searchParams.delete("invite");window.history.replaceState({},"",url);setFriendInviteResolved(true);setFriendInvitePreview(null);};
   const acceptPersonalInvite=async()=>{if(!accountSnapshot||!friendStore||!friendInviteToken)return;setFriendInviteBusy(true);setFriendInviteError("");try{await friendStore.acceptInvitation(accountSnapshot,friendInviteToken);await refreshFriends();clearInviteUrl();setSheet("invite");}catch(error){setFriendInviteError(error instanceof FriendError?error.message:"The invitation could not be accepted.");}finally{setFriendInviteBusy(false);}};
 
-  if (!hydrated || !owner || !viewerCharacter || !accountReady || !account || !friendStore) return <main className="loading" role="status" aria-label="Loading Pluoto"><div className="brand-mark" aria-hidden="true"/></main>;
+  if (!hydrated || !owner || !viewerCharacter || !accountReady || !account || !friendStore) return <main className="loading" role="status" aria-label="Loading Pluoto"><BrandWordmark className="loading-wordmark"/></main>;
 
   if(friendInviteToken&&!friendInviteResolved&&friendInvitePreview&&(!inviteAuthStarted||accountSnapshot))return <FriendInviteLanding preview={friendInvitePreview} signedIn={Boolean(accountSnapshot)} busy={friendInviteBusy} error={friendInviteError} onAuthenticate={()=>{setInviteAuthStarted(true);setForceAccountGate(true);}} onAccept={acceptPersonalInvite} onLater={clearInviteUrl}/>;
-  if(friendInviteToken&&!friendInviteResolved&&!friendInvitePreview&&!friendInviteError)return <main className="loading" role="status" aria-label="Loading Pluoto"><div className="brand-mark" aria-hidden="true"/></main>;
-  if(friendInviteToken&&!friendInviteResolved&&friendInviteError)return <div className="friend-invite-gate"><section><p className="eyebrow">INVITATION UNAVAILABLE</p><h1>This link can’t be used.</h1><div className="form-error">{friendInviteError}</div><button className="secondary wide" onClick={clearInviteUrl}>{inviteAuthStarted?"Continue without this invitation":"Go to Pluoto"}</button></section></div>;
+  if(friendInviteToken&&!friendInviteResolved&&!friendInvitePreview&&!friendInviteError)return <main className="loading" role="status" aria-label="Loading Pluoto"><BrandWordmark className="loading-wordmark"/></main>;
+  if(friendInviteToken&&!friendInviteResolved&&friendInviteError)return <div className="friend-invite-gate"><section><p className="eyebrow">INVITATION UNAVAILABLE</p><h1>This link can’t be used.</h1><div className="form-error">{friendInviteError}</div><button className="secondary wide" onClick={clearInviteUrl}>{inviteAuthStarted?"Continue without this invitation":"Go to your Plane"}</button></section></div>;
 
   if (!isGuest && (state.requiresOnboarding || forceAccountGate || (state.accountRequired&&!accountSnapshot))) return <OnboardingFlow owner={onboardingOwner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount}/>;
 
   return <main className="app-shell">
     <header className="app-header">
       <button className="wordmark" onClick={() => setResetSignal((value) => value + 1)} aria-label="Recenter Plane">
-        <strong>pluoto</strong>
-        <span>{owner.nickname}’s Plane</span>
+        <BrandWordmark/>
       </button>
       <div className="corner-actions">
         <button className="profile-button" onClick={() => isGuest ? setSheet(sheet === "profile" ? null : "profile") : setSelected(owner)} aria-label="Open my Character">
@@ -224,7 +224,7 @@ export default function Home() {
     {!arranging && !editingLand && <div className={`home-controls ${isGuest?"guest":""}`}>
       <nav className="action-dock" aria-label="Plane actions">
         <button onClick={openFriends}><Share2 size={19}/><span>Friends</span></button>
-        {!isGuest && <button onClick={startArrange}><Move size={18}/><span>Arrange</span></button>}
+        {!isGuest && <button onClick={startArrange}><Move size={19}/><span>Arrange</span></button>}
       </nav>
       {!isGuest && <InlineBubbleComposer current={owner.bubble} onPublish={publishBubble} onClear={clearBubble} onOpen={()=>setSheet("bubble")}/>} 
     </div>}
@@ -240,7 +240,7 @@ export default function Home() {
     {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={async text=>{await publishBubble(text);setSheet(null);}} onClear={clearBubble} onDelete={deleteBubble} onClearAll={clearAllBubbles} onClose={closeAll}/>}
     {sheet === "customize" && <OnboardingFlow editing owner={owner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount} onCancel={closeAll}/>} 
     {editingLand&&<LandEditor person={owner} onSave={saveLand} onCancel={()=>setEditingLand(false)}/>} 
-    {showWelcome && !isGuest && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}
+    {showWelcome && !isGuest && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow brand-eyebrow">WELCOME TO <BrandWordmark/></p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}
     {needsGuestJoin && <GuestJoin planeName={`${owner.nickname}’s Plane`} onJoin={joinGuest}/>}
   </main>;
 }

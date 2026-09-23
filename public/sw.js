@@ -1,5 +1,5 @@
-const CACHE = "pluoto-shell-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "pluoto-shell-v3";
+const SHELL = ["/", "/manifest.webmanifest", "/pluoto-logo.png", "/pluoto-text.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
