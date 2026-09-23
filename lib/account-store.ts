@@ -183,6 +183,10 @@ class SupabaseAccountStore {
     const identity = { userId: data.user.id, email: data.user.email ?? email };
     return { identity, existing: await this.restore() };
   }
+  async signInWithGoogle(redirectTo: string) {
+    const { error } = await this.client.auth.signInWithOAuth({ provider: "google", options: { redirectTo, queryParams: { prompt: "select_account" } } });
+    if (error) throw accountError(error, "Google sign-in could not be started.");
+  }
   async resendConfirmation(emailInput: string, redirectTo: string) {
     const { error } = await this.client.auth.resend({ type: "signup", email: safeEmail(emailInput), options: { emailRedirectTo: redirectTo } });
     if (error) throw accountError(error, "The confirmation email could not be resent.");
@@ -201,10 +205,10 @@ class SupabaseAccountStore {
   async completeAuthCallback(code?: string) {
     if (code) {
       const { error } = await this.client.auth.exchangeCodeForSession(code);
-      if (error) throw accountError(error, "That email link could not be completed.");
+      if (error) throw accountError(error, "Sign-in could not be completed.");
     }
     const identity = await this.getIdentity();
-    if (!identity) throw new AccountError("expired_link", "That email link has expired or was already used. Request a new one.");
+    if (!identity) throw new AccountError("expired_link", "This sign-in link has expired or was already used. Please try again.");
     return identity;
   }
   async save(snapshot: AccountSnapshot) {

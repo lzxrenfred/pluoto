@@ -9,13 +9,12 @@ import { OnboardingFlow, clearOnboardingDraft } from "@/components/OnboardingFlo
 import {FriendCenter,FriendInviteLanding} from "@/components/FriendCenter";
 import dynamic from "next/dynamic";
 import { beginArrangement } from "@/lib/world-interactions";
-import { usePlane } from "@/lib/use-plane";
+import { startNewHomePlane, usePlane } from "@/lib/use-plane";
 import type { LandObject, Person } from "@/lib/types";
 import { createAccountStore, readInviteContext, type AccountSnapshot, type AccountStore } from "@/lib/account-store";
 import {createFriendStore,FriendError,type FriendPreview,type FriendRecord,type FriendState,type FriendStore} from "@/lib/friend-store";
 import {isSlotFree} from "@/lib/world";
 import {createBubbleStore,type BubbleState,type BubbleStore} from "@/lib/bubble-store";
-import {withoutSeededDemoFriends} from "@/lib/demo";
 
 const World = dynamic(() => import("@/components/World3D"), { ssr: false });
 const LandEditor = dynamic(() => import("@/components/LandEditor3D"), { ssr: false });
@@ -59,37 +58,43 @@ export default function Home() {
   const [friendInviteResolved,setFriendInviteResolved]=useState(false);
   const [inviteAuthStarted,setInviteAuthStarted]=useState(false);
   const [openFriendsAfterAuth,setOpenFriendsAfterAuth]=useState(false);
-  const socialIds=useRef(new Set<string>());
   const friendRefreshId=useRef(0);
 
-  const owner = useMemo(() => state.people.find((person) => person.owner) ?? state.people[0], [state.people]);
+  const accountPeople = useMemo(() => {
+    if (!accountSnapshot) return state.people;
+    const own = state.people.find(person => person.owner && person.id === accountSnapshot.userId) ?? accountSnapshot.person;
+    const placed = new Set((friendState?.friends ?? []).filter(friend => friend.placement && !friend.placement.hidden).map(friend => friend.preview.userId));
+    return [own, ...state.people.filter(person => !person.owner && placed.has(person.id))];
+  }, [accountSnapshot, friendState, state.people]);
+  const owner = accountPeople.find(person => person.owner) ?? accountPeople[0];
   const onboardingOwner = useMemo(() => forceAccountGate ? {...owner,nickname:"",pills:[],accessory:"none" as const,outfit:"none" as const,species:"fox" as const,color:"#e8794d",accent:"#fff2df"} : owner, [forceAccountGate,owner]);
   const isGuest = viewer?.role === "guest";
   const viewerCharacter = isGuest && viewer ? viewer : owner;
-  const visiblePeople = arrangeDraft ?? state.people;
+  const visiblePeople = arrangeDraft ?? accountPeople;
   const arranging = !isGuest && arrangeDraft !== null;
   const closeAll = () => { setSelected(null); setSheet(null); };
   const inviteContext=hydrated&&typeof window!=="undefined"?readInviteContext(window.location.href):undefined;
   const friendInviteToken=inviteContext?.friendInviteToken;
 
   const applyAccount = useCallback((snapshot: AccountSnapshot) => {
+    friendRefreshId.current += 1;
+    setFriendState(null);
+    setSelected(null);
+    setArrangeDraft(null);
     setAccountSnapshot(snapshot);
     setForceAccountGate(false);
     setState(value => {
-      const positions = new Map(snapshot.arrangement.map(item => [item.personId, item]));
-      const retained=withoutSeededDemoFriends(value.people);
-      const base=retained.some(person=>person.owner)?retained:[snapshot.person];
-      return {...value, completedOnboarding:true, requiresOnboarding:false, accountRequired:true, people:base.map(person => {
-        if(person.owner) {
-          const position=positions.get(snapshot.person.id);
-          return {...snapshot.person,plotX:position?.plotX??person.plotX,plotY:position?.plotY??person.plotY,owner:true};
-        }
-        const position=positions.get(person.id);
-        return position?{...person,plotX:position.plotX,plotY:position.plotY}:person;
-      })};
+      const position=snapshot.arrangement.find(item=>item.personId===snapshot.userId);
+      const person={...snapshot.person,plotX:position?.plotX??snapshot.person.plotX,plotY:position?.plotY??snapshot.person.plotY,owner:true};
+      return {...value,completedOnboarding:true,requiresOnboarding:false,accountRequired:true,people:[person]};
     });
     setShowWelcome(false);setSheet(null);
   },[setState]);
+
+  const completeOnboarding = (snapshot: AccountSnapshot, newAccount = false) => {
+    if (newAccount) { startNewHomePlane(); return; }
+    applyAccount(snapshot);
+  };
 
   useEffect(()=>{
     if(!hydrated)return;
@@ -108,9 +113,12 @@ export default function Home() {
     const requestId=++friendRefreshId.current;
     setFriendLoading(true);
     try{
-      const result=await friendStore.list(accountSnapshot);if(requestId!==friendRefreshId.current)return;const previous=socialIds.current;const current=new Set(result.friends.map(friend=>friend.preview.userId));socialIds.current=current;setFriendState(result);
+      const result=await friendStore.list(accountSnapshot);if(requestId!==friendRefreshId.current)return;setFriendState(result);
       const placed=result.friends.filter(friend=>friend.placement&&!friend.placement.hidden);
-      setState(value=>{const next=value.people.filter(person=>!previous.has(person.id)||placed.some(friend=>friend.preview.userId===person.id));for(const friend of placed){const placement=pendingPlacements.current.get(friend.preview.userId)??friend.placement!;const person={...friend.preview.person,owner:false,plotX:placement.plotX,plotY:placement.plotY};const index=next.findIndex(item=>item.id===person.id);if(index>=0)next[index]=person;else next.push(person);}return{...value,people:next};});
+      const visibleIds=new Set([accountSnapshot.userId,...placed.map(friend=>friend.preview.userId)]);
+      const arrangement=accountSnapshot.arrangement.filter(item=>visibleIds.has(item.personId));
+      if(arrangement.length!==accountSnapshot.arrangement.length)setAccountSnapshot(current=>current?.userId===accountSnapshot.userId?{...current,arrangement}:current);
+      setState(value=>{const own=value.people.find(person=>person.owner&&person.id===accountSnapshot.userId)??accountSnapshot.person;const next=[own];for(const friend of placed){const placement=pendingPlacements.current.get(friend.preview.userId)??friend.placement!;next.push({...friend.preview.person,owner:false,plotX:placement.plotX,plotY:placement.plotY});}return{...value,people:next};});
     }catch(error){console.warn("Friend refresh failed",error);}finally{if(requestId===friendRefreshId.current)setFriendLoading(false);}
   },[accountSnapshot,friendStore,setState]);
 
@@ -127,7 +135,7 @@ export default function Home() {
   useEffect(()=>{if(accountSnapshot&&openFriendsAfterAuth&&friendState){setSheet("invite");setOpenFriendsAfterAuth(false);}},[accountSnapshot,friendState,openFriendsAfterAuth]);
   useEffect(()=>{if(!friendInviteToken||!friendStore||friendInviteResolved)return;setFriendInviteError("");void friendStore.preview(friendInviteToken).then(setFriendInvitePreview).catch(error=>setFriendInviteError(error instanceof FriendError?error.message:"That invitation is unavailable."));},[friendInviteResolved,friendInviteToken,friendStore]);
 
-  const signOut=async()=>{await account?.signOut();clearOnboardingDraft();setAccountSnapshot(null);setSheet(null);setForceAccountGate(true);};
+  const signOut=async()=>{await account?.signOut();friendRefreshId.current+=1;clearOnboardingDraft();setAccountSnapshot(null);setFriendState(null);setSelected(null);setArrangeDraft(null);setSheet(null);setForceAccountGate(true);};
 
   const publishBubble = async (text: string) => {
     if(!accountSnapshot||!bubbleStore)throw new Error("Sign in to publish a Bubble.");
@@ -155,7 +163,7 @@ export default function Home() {
 
   const startArrange = () => {
     closeAll();
-    setArrangeDraft(beginArrangement(state.people));
+    setArrangeDraft(beginArrangement(accountPeople));
   };
 
   const cancelArrange = () => {pendingPlacements.current.clear();setArrangeError("");setArrangeDraft(null);};
@@ -180,7 +188,7 @@ export default function Home() {
   };
 
   const firstFree=useCallback((people:Person[])=>{for(let radius=1;radius<15;radius++)for(let y=-radius;y<=radius;y++)for(let x=-radius;x<=radius;x++)if(Math.max(Math.abs(x),Math.abs(y))===radius&&isSlotFree({plotX:x,plotY:y},people))return{plotX:x,plotY:y};return{plotX:0,plotY:0};},[]);
-  const placeFriend=(friend:FriendRecord)=>{const position=friend.placement??firstFree(state.people);const person={...friend.preview.person,owner:false,plotX:position.plotX,plotY:position.plotY};setArrangeDraft(beginArrangement([...state.people.filter(item=>item.id!==person.id),person]));setSheet(null);};
+  const placeFriend=(friend:FriendRecord)=>{const position=friend.placement??firstFree(accountPeople);const person={...friend.preview.person,owner:false,plotX:position.plotX,plotY:position.plotY};setArrangeDraft(beginArrangement([...accountPeople.filter(item=>item.id!==person.id),person]));setSheet(null);};
   const hideFriend=(friend:FriendRecord)=>{if(!accountSnapshot||!friendStore)return;const position=friend.placement??{plotX:0,plotY:0,hidden:true};void friendStore.setPlacement(accountSnapshot,friend.preview.userId,{plotX:position.plotX,plotY:position.plotY,hidden:true}).then(refreshFriends);};
   const removeFriend=(friend:FriendRecord)=>{if(!accountSnapshot||!friendStore||!window.confirm(`Remove ${friend.preview.person.nickname} as a friend? Both placements will be removed.`))return;void friendStore.removeFriend(accountSnapshot,friend.preview.userId).then(refreshFriends);};
   const blockFriend=(friend:FriendRecord)=>{if(!accountSnapshot||!friendStore||!window.confirm(`Block ${friend.preview.person.nickname}? They won’t be able to send another request.`))return;void friendStore.blockUser(accountSnapshot,friend.preview.userId).then(refreshFriends);};
@@ -194,7 +202,7 @@ export default function Home() {
   if(friendInviteToken&&!friendInviteResolved&&!friendInvitePreview&&!friendInviteError)return <main className="loading" role="status" aria-label="Loading Pluoto"><BrandWordmark className="loading-wordmark"/></main>;
   if(friendInviteToken&&!friendInviteResolved&&friendInviteError)return <div className="friend-invite-gate"><section><p className="eyebrow">INVITATION UNAVAILABLE</p><h1>This link can’t be used.</h1><div className="form-error">{friendInviteError}</div><button className="secondary wide" onClick={clearInviteUrl}>{inviteAuthStarted?"Continue without this invitation":"Go to your Plane"}</button></section></div>;
 
-  if (!isGuest && (state.requiresOnboarding || forceAccountGate || (state.accountRequired&&!accountSnapshot))) return <OnboardingFlow owner={onboardingOwner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount}/>;
+  if (!isGuest && (state.requiresOnboarding || forceAccountGate || (state.accountRequired&&!accountSnapshot))) return <OnboardingFlow owner={onboardingOwner} people={accountPeople} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={completeOnboarding}/>;
 
   return <main className="app-shell">
     <header className="app-header">
@@ -238,7 +246,7 @@ export default function Home() {
     {sheet === "invite" && accountSnapshot && friendState && <FriendCenter actor={accountSnapshot} state={friendState} store={friendStore} onRefresh={refreshFriends} onClose={closeAll} onPlace={placeFriend} onHide={hideFriend} onRemove={removeFriend} onBlock={blockFriend}/>}
     {sheet === "invite" && accountSnapshot && !friendState && <div className="sheet-backdrop"><section className="bottom-sheet"><button className="sheet-close" onClick={closeAll}><X/></button><p>{friendLoading?"Loading friends…":"Friend service unavailable."}</p></section></div>}
     {sheet === "bubble" && <BubbleSheet owner={owner} log={state.bubbleLog} onPublish={async text=>{await publishBubble(text);setSheet(null);}} onClear={clearBubble} onDelete={deleteBubble} onClearAll={clearAllBubbles} onClose={closeAll}/>}
-    {sheet === "customize" && <OnboardingFlow editing owner={owner} people={state.people} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount} onCancel={closeAll}/>} 
+    {sheet === "customize" && <OnboardingFlow editing owner={owner} people={accountPeople} account={account} inviteContext={readInviteContext(window.location.href)} onComplete={applyAccount} onCancel={closeAll}/>}
     {editingLand&&<LandEditor person={owner} onSave={saveLand} onCancel={()=>setEditingLand(false)}/>} 
     {showWelcome && !isGuest && <div className="welcome-card"><button className="welcome-close" onClick={() => setShowWelcome(false)}>×</button><div className="welcome-art"><Character species="fox" color="#e8794d" accent="#fff2df" accessory="scarf" size={100}/><i/><i/></div><p className="eyebrow brand-eyebrow">WELCOME TO <BrandWordmark/></p><h1>Your people,<br/>in one little world.</h1><p>Each piece of land is someone you care about. Look around, then make yours.</p><button className="primary wide" onClick={() => { setShowWelcome(false); setSheet("customize"); }}>Make it mine</button><button className="text-button" onClick={() => setShowWelcome(false)}>Explore Ren’s demo</button></div>}
     {needsGuestJoin && <GuestJoin planeName={`${owner.nickname}’s Plane`} onJoin={joinGuest}/>}

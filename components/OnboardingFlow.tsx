@@ -34,7 +34,7 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
   account: AccountStore;
   inviteContext?: InviteContext;
   editing?: boolean;
-  onComplete: (snapshot: AccountSnapshot) => void;
+  onComplete: (snapshot: AccountSnapshot, newAccount?: boolean) => void;
   onCancel?: () => void;
 }) {
   const initial = useMemo(() => editing
@@ -94,13 +94,20 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
   const authCallback = () => authRedirectUrl("/auth/callback", window.location.href);
   const recoveryCallback = () => authRedirectUrl("/auth/recovery", window.location.href);
 
+  const beginGoogleSignIn = async () => {
+    if (account.mode !== "supabase") return;
+    setBusy(true); setError(""); setErrorCode("");
+    try { await account.signInWithGoogle(authCallback()); }
+    catch (reason) { report(reason, "Google sign-in could not be started."); setBusy(false); }
+  };
+
   const finish = async (currentIdentity: AccountIdentity) => {
-    const person = { ...draft, id: currentIdentity.userId, nickname: draft.nickname.trim(), owner: true };
-    const arrangement = people.map(item => ({ personId: item.owner ? currentIdentity.userId : item.id, plotX: item.plotX, plotY: item.plotY }));
+    const person = { ...draft, id: currentIdentity.userId, nickname: draft.nickname.trim(), plotX: 0, plotY: 0, owner: true };
+    const arrangement = [{ personId: currentIdentity.userId, plotX: 0, plotY: 0 }];
     const snapshot: AccountSnapshot = { userId: currentIdentity.userId, email: currentIdentity.email, person, arrangement, inviteContext };
     await account.save(snapshot);
     clearOnboardingDraft();
-    onComplete(snapshot);
+    onComplete(snapshot, true);
   };
 
   const authenticate = async () => {
@@ -178,6 +185,10 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
     if (step === AUTH || step === CHECK_EMAIL || step === RECOVERY_SENT || step === RESET_PASSWORD) go(WELCOME);
     else if (step > NAME) go(step - 1);
   };
+  const googleSignIn = account.mode === "supabase" && <button type="button" className="primary google-auth-button" disabled={busy} onClick={() => void beginGoogleSignIn()}>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#4285F4" d="M21.35 12.22c0-.73-.06-1.42-.18-2.09H12v3.95h5.24a4.48 4.48 0 0 1-1.94 2.94v2.44h3.14c1.84-1.7 2.91-4.2 2.91-7.24Z"/><path fill="#34A853" d="M12 21.5c2.63 0 4.83-.87 6.44-2.35l-3.14-2.44c-.87.58-1.98.93-3.3.93-2.54 0-4.69-1.72-5.46-4.04H3.31v2.49A9.73 9.73 0 0 0 12 21.5Z"/><path fill="#FBBC05" d="M6.54 13.6a5.85 5.85 0 0 1 0-3.2V7.91H3.31a9.73 9.73 0 0 0 0 8.18l3.23-2.49Z"/><path fill="#EA4335" d="M12 6.36c1.43 0 2.71.49 3.72 1.47l2.79-2.79A9.36 9.36 0 0 0 12 2.5a9.73 9.73 0 0 0-8.69 5.41l3.23 2.49C7.31 8.08 9.46 6.36 12 6.36Z"/></svg>
+    <span>{busy ? "One moment…" : "Continue with Google"}</span>
+  </button>;
 
   return <div className="onboarding-shell">
     <header className="onboarding-header">
@@ -189,15 +200,16 @@ export function OnboardingFlow({ owner, people, account, inviteContext, editing 
     <main className={`onboarding-main step-${step}`}>
       {preview && <section className="onboarding-stage">{preview}</section>}
       <section className="onboarding-panel">
-        {step === WELCOME && <div className="welcome-copy"><span className="world-orbit">✦</span><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Create an account, then make a small Character and a corner of the sky that feels like yours.</p><button className="primary wide" onClick={() => { setIntent("create"); go(AUTH); }}>Create account</button><button className="text-button" onClick={() => { setIntent("signin"); go(AUTH); }}>Sign in</button></div>}
+        {step === WELCOME && <div className="welcome-copy"><span className="world-orbit">✦</span><p className="eyebrow">WELCOME TO PLUOTO</p><h1>Your people,<br/>in one little world.</h1><p>Create an account, then make a small Character and a corner of the sky that feels like yours.</p>{googleSignIn}</div>}
         {step === AUTH && <form id="pluoto-auth-form" onSubmit={event => { event.preventDefault(); void authenticate(); }}>
           <p className="eyebrow">{intent === "signin" ? "WELCOME BACK" : "CREATE ACCOUNT"}</p><h1>{intent === "signin" ? "Enter your Plane." : "Keep your little world."}</h1>
-          <p>{intent === "signin" ? "Sign in to restore your Character, land, friends and arrangement." : "Use an email and password. You’ll confirm your email before entering your Plane."}</p>
-          <label className="field-label auth-field"><Mail size={18}/><span>Email</span><input autoFocus type="email" name="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/></label>
+          <p>{intent === "signin" ? "Sign in to restore your Character, land, friends and arrangement." : "Create your account to keep your Character and Plane."}</p>
+          {googleSignIn}{googleSignIn && <div className="auth-method-divider"><span>or continue with email</span></div>}
+          <label className="field-label auth-field"><Mail size={18}/><span>Email</span><input autoFocus={account.mode === "local"} type="email" name="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/></label>
           <label className="field-label auth-field"><span>Password</span><input type={showPassword ? "text" : "password"} name="password" autoComplete={intent === "signin" ? "current-password" : "new-password"} minLength={MIN_PASSWORD_LENGTH} required value={password} onChange={event => setPassword(event.target.value)} placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}/><button type="button" className="password-toggle" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></label>
           {intent === "create" && <label className="field-label auth-field"><span>Confirm password</span><input type={showPassword ? "text" : "password"} name="confirm-password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/></label>}
           {account.mode === "local" && <div className="local-mode-note"><strong>Local account preview</strong><span>Supabase is not configured. This device stores only a salted password verifier; no email is sent.</span></div>}
-          <button className="primary auth-submit" type="submit" disabled={busy || !/^\S+@\S+\.\S+$/.test(email) || password.length < MIN_PASSWORD_LENGTH || (intent === "create" && password !== confirmPassword)}>{busy ? "One moment…" : intent === "signin" ? "Sign in" : "Create account"}</button>
+          <button className={`${account.mode === "supabase" ? "secondary" : "primary"} auth-submit`} type="submit" disabled={busy || !/^\S+@\S+\.\S+$/.test(email) || password.length < MIN_PASSWORD_LENGTH || (intent === "create" && password !== confirmPassword)}>{busy ? "One moment…" : intent === "signin" ? "Sign in with email" : "Create account with email"}</button>
           {intent === "signin" && <button type="button" className="text-button" onClick={() => void beginRecovery()}>Set or reset password</button>}
           {errorCode === "email_unconfirmed" && <button type="button" className="text-button" disabled={cooldown > 0 || busy} onClick={() => void resendConfirmation()}>{cooldown ? `Resend confirmation in ${cooldown}s` : "Resend confirmation email"}</button>}
           <button type="button" className="text-button" onClick={() => { setIntent(value => value === "signin" ? "create" : "signin"); setPassword(""); setConfirmPassword(""); setError(""); }}>{intent === "signin" ? "Create a new account" : "Already have an account? Sign in"}</button>

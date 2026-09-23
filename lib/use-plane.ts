@@ -9,6 +9,18 @@ const HOME_PLANE_KEY='pluoto-home-plane-v1';
 const LEGACY_STATE_KEY='pluoto-state-v2-isometric';
 const identityKey=(planeId:string)=>`pluoto-viewer-v1:${planeId}`;
 
+export function startNewHomePlane() {
+  const accessKey=createPlaneAccessKey();
+  const access=splitPlaneAccessKey(accessKey);
+  localStorage.setItem(HOME_PLANE_KEY,accessKey);
+  const url=new URL(window.location.href);
+  url.searchParams.set('plane',access.id);
+  url.searchParams.set('key',access.inviteToken);
+  url.searchParams.delete('join');
+  url.searchParams.delete('previewGuest');
+  window.location.replace(url.toString());
+}
+
 export type ViewerIdentity=GuestIdentity&{role:'host'|'guest'};
 type JoinDraft={nickname:string;species:Species;color:string};
 
