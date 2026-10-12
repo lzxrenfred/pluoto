@@ -21,6 +21,9 @@ export const presetScene: Record<DecorationPreset, Person["scene"]> = {
   custom: "new",
 };
 
+/** Every field that changes how a Character looks; caches baked meshes and avatar images. */
+export const appearanceKey = (person: Person) => JSON.stringify([person.species, person.color, person.accent, person.outfit, person.accessory, person.accessories, person.accessoryColor, person.accessoryColors]);
+
 export function selectedAccessories(person: Pick<Person,"accessory"|"accessories">) {
   const selected=person.accessories??(person.accessory!=="none"?[person.accessory]:[]);
   const headwear=selected.find(item=>HEADWEAR.includes(item));

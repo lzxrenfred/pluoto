@@ -1,9 +1,12 @@
 "use client";
-import { RoundedBox } from '@react-three/drei';
+import type { ComponentProps } from 'react';
+import { RoundedBox as DreiRoundedBox } from '@react-three/drei';
 import { ExtrudeGeometry, MeshStandardMaterial, Shape } from 'three';
 import type { Person } from '@/lib/types';
 import { accessoryColorFor, selectedAccessories } from '@/lib/customization';
 
+// drei defaults to 8 bevel steps per edge (~430 triangles a box); 4 look the same at this size.
+function RoundedBox(props: ComponentProps<typeof DreiRoundedBox>) { return <DreiRoundedBox bevelSegments={2} {...props}/>; }
 const makeMaterial = (color:string, flatShading = false) => new MeshStandardMaterial({color,roughness:.9,metalness:0,flatShading});
 const materials = {
   wall:makeMaterial('#f5ead8'), wallShade:makeMaterial('#e8d8c1'), roof:makeMaterial('#df7963'), roofShade:makeMaterial('#c86355'),
@@ -17,10 +20,13 @@ type MaterialName = keyof typeof materials;
 type BlockProps = {position?:[number,number,number];size:[number,number,number];material:MaterialName;rotation?:[number,number,number];radius?:number};
 function Block({position,size,material,rotation,radius}:BlockProps) {
   const safeRadius = radius ?? Math.min(.045,Math.min(...size)/3);
-  return <RoundedBox position={position} args={size} radius={safeRadius} smoothness={2} rotation={rotation} material={materials[material]} castShadow receiveShadow/>;
+  // Small rounding needs few bevel steps; drei's default (8) spends ~430 triangles per box.
+  return <RoundedBox position={position} args={size} radius={safeRadius} smoothness={2} bevelSegments={safeRadius < .03 ? 1 : 2} rotation={rotation} material={materials[material]} castShadow receiveShadow/>;
 }
+// Tessellation follows size: a petal or eye covers a few pixels, so 352 triangles there is pure waste.
+const pebbleDetail = (scale:[number,number,number]) => { const size = Math.max(...scale); return (size < .06 ? [6, 4] : size < .16 ? [10, 7] : size < .26 ? [12, 9] : [16, 12]) as [number, number]; };
 function Pebble({position,scale,material,color}:{position:[number,number,number];scale:[number,number,number];material?:MaterialName;color?:string}) {
-  return <mesh position={position} scale={scale} castShadow receiveShadow><sphereGeometry args={[1,16,12]}/>{material?<primitive object={materials[material]} attach="material"/>:<meshStandardMaterial color={color} roughness={.9}/>}</mesh>;
+  return <mesh position={position} scale={scale} castShadow receiveShadow><sphereGeometry args={[1,...pebbleDetail(scale)]}/>{material?<primitive object={materials[material]} attach="material"/>:<meshStandardMaterial color={color} roughness={.9}/>}</mesh>;
 }
 
 const gableShape = new Shape();

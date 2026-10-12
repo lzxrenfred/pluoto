@@ -5,7 +5,7 @@ import {Camera,Check,Copy,EyeOff,Link2,MapPin,MoreHorizontal,RefreshCw,ShieldOff
 import {QRCodeSVG} from "qrcode.react";
 import type {AccountSnapshot} from "@/lib/account-store";
 import {FriendError,normalizeFriendCode,type FriendPreview,type FriendRecord,type FriendState,type FriendStore} from "@/lib/friend-store";
-import {CharacterPreview3D,LandPreview3D} from "./CustomizationPreview3D";
+import {CharacterPreview3D,CharacterTile,LandPreview3D} from "./CustomizationPreview3D";
 
 type ScannerProps={onValue:(value:string)=>void};
 function QrScanner({onValue}:ScannerProps){
@@ -39,7 +39,7 @@ export function FriendCenter({actor,state,store,onRefresh,onClose,onPlace,onHide
   </section></div>{openMenu&&menuFriend&&typeof document!=="undefined"&&createPortal(<div className="friend-more-menu" role="menu" onPointerDown={event=>event.stopPropagation()} style={{position:"fixed",top:openMenu.top,right:openMenu.right}}><button role="menuitem" onClick={()=>{setOpenMenu(null);onRemove(menuFriend);}}><Trash2 size={15}/> Remove friend</button><button className="danger" role="menuitem" onClick={()=>{setOpenMenu(null);onBlock(menuFriend);}}><ShieldOff size={15}/> Block friend</button></div>,document.body)}</>;
 }
 
-function FriendRow({preview,children}:{preview:FriendPreview;children:ReactNode}){return <div className="friend-row"><div className="friend-avatar"><CharacterPreview3D person={preview.person}/></div><div><strong>{preview.person.nickname}</strong><span>{preview.person.species} · {preview.person.ground} land</span></div><aside>{children}</aside></div>}
+function FriendRow({preview,children}:{preview:FriendPreview;children:ReactNode}){return <div className="friend-row"><div className="friend-avatar"><CharacterTile person={preview.person}/></div><div><strong>{preview.person.nickname}</strong><span>{preview.person.species} · {preview.person.ground} land</span></div><aside>{children}</aside></div>}
 function FriendPreviewCard({preview,children}:{preview:FriendPreview;children:ReactNode}){return <div className="friend-preview"><div><CharacterPreview3D person={preview.person}/><LandPreview3D person={preview.person}/></div><h3>{preview.person.nickname}</h3><p>{preview.person.species} · {preview.person.ground} land · {preview.person.home}</p>{children}</div>}
 
 export function FriendInviteLanding({preview,signedIn,busy,error,onAuthenticate,onAccept,onLater}:{preview:FriendPreview;signedIn:boolean;busy:boolean;error?:string;onAuthenticate:()=>void;onAccept:()=>void;onLater:()=>void}){return <div className="friend-invite-gate"><section><p className="eyebrow">PERSONAL INVITATION</p><h1>{preview.person.nickname} wants to connect.</h1><p>See only their Character and their own land, then choose whether to add each other.</p><div className="invite-world-preview"><LandPreview3D person={preview.person}/></div>{signedIn?<><button className="primary wide" disabled={busy} onClick={onAccept}>Accept invitation</button><button className="text-button" onClick={onLater}>Later</button></>:<><button className="primary wide" onClick={onAuthenticate}>Sign in or create an account</button><p className="quiet-copy">The invitation stays with you through verification and onboarding.</p></>}{error&&<div className="form-error">{error}</div>}</section></div>}

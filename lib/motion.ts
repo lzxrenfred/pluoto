@@ -10,6 +10,8 @@ export function randomWanderDelay(initial = false, random = Math.random) {
   const max = initial ? WANDER_DELAY.initialMax : WANDER_DELAY.restMax;
   return min + (max - min) * random();
 }
+/** Breathing and canopy sway are slow enough that ~10fps reads as smooth, so an otherwise still scene renders no faster. */
+export const IDLE_FRAME_MS = 100;
 export const calmEase = (t: number) => t * t * (3 - 2 * t);
 export function walkableNeighbors(position: TilePosition, blocked: TilePosition[]) {
   return [[1,0],[0,1],[-1,0],[0,-1]].map(([x,y]) => ({ tileX: position.tileX+x, tileY: position.tileY+y }))

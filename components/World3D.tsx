@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { ContactShadows, Html, Line, OrbitControls } from "@react-three/drei";
-import { BoxGeometry, Group, MathUtils, MeshStandardMaterial, OrthographicCamera, PCFShadowMap, Plane, PlaneGeometry, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Group, MathUtils, MeshBasicMaterial, OrthographicCamera, Plane, Vector3 } from "three";
 import type { OrbitControls as Controls } from "three-stdlib";
 import { Minus, Plus, RotateCcw } from "lucide-react";
-import type { Person } from "@/lib/types";
+import type { LandObject, Person } from "@/lib/types";
 import { isSlotFree, PLOT_TILES, type PlotPosition, type TilePosition } from "@/lib/world";
 import { CAMERA_OFFSET, TERRAIN_DEPTH, spaceAnchor } from "@/lib/render3d";
-import { randomWanderDelay, useMotionAllowed, walkableNeighbors } from "@/lib/motion";
+import { LIGHTS } from "@/lib/bake";
+import { IDLE_FRAME_MS, randomWanderDelay, useMotionAllowed, walkableNeighbors } from "@/lib/motion";
 import {
   CHARACTER_RETURN_MS,
   CharacterReturnTimers,
@@ -17,14 +18,14 @@ import {
   moveLandInArrangement,
   pointerMoved,
   scenePointToPlacement,
-  terrainOccupancyForLand,
   type CharacterPlacement,
 } from "@/lib/world-interactions";
 import { blockedLandCells, characterCellForPerson, landObjectsForPerson, signCellForPerson, signModelZ } from "@/lib/land-objects";
-import type { LandObject } from "@/lib/types";
+import { appearanceKey } from "@/lib/customization";
 import { CharacterModel, GroundDetailsModel } from "./PlaneModels";
 import { LandObjectInstance } from "./LandObjects3D";
-import { LandSignModel } from "./LandSignModel";
+import { SignBoards, SignPosts, SignText } from "./LandSignModel";
+import { Baked, noRaycast, swayTime } from "./Baked";
 
 type Props = {
   people: Person[];
@@ -44,12 +45,27 @@ type CharacterDrag = {
   person: Person; group: Group; pointerId: number; start: { x: number; y: number }; original: Vector3;
   parentLand: Person; dragged: boolean; candidate: CharacterPlacement | null; valid: boolean;
 };
+type PerfStats = { frames: number[]; calls: number; triangles: number };
 
 const floor = new Plane(new Vector3(0, 1, 0), 0);
 const palette = { grass: "#aecb82", stone: "#dfddd5", earth: "#dabb8e", sand: "#ebdcc2", meadow: "#a8c894", clay: "#c99680" };
 const sidePalette = { grass: "#9a775c", stone: "#8f8985", earth: "#9a7356", sand: "#a98262", meadow: "#8e795d", clay: "#9b6b5a" };
-const localTiles = Array.from({ length: PLOT_TILES ** 2 }, (_, index) => ({ tileX: index % PLOT_TILES, tileY: Math.floor(index / PLOT_TILES) }));
+// Walks render at ~60fps: the 4ms slack lands each frame on the next 60Hz vsync, or every other one at 120Hz.
+const AMBIENT_FRAME_MS = 1000 / 60 - 4;
+const signMaterial = new MeshBasicMaterial({ vertexColors: true, transparent: true, depthTest: false, depthWrite: false });
 const resetZoom = (size: { width: number; height: number }) => Math.min(size.width / 17, size.height / 12) * (size.width <= 680 ? 1.15 ** 3 : 1);
+// Characters move, so they stay out of the contact shadows, which are rendered once per layout.
+const CHARACTER_LAYER = 1;
+/** Trees, bushes and flowers lean from their base; the bake records the lean and the land's vertex shader plays it. */
+const swayFor = (object: LandObject, index: number) => {
+  const amplitude = object.modelId.startsWith("tree.") ? .012 : ["bush", "flowers"].includes(object.modelId) ? .007 : 0;
+  return amplitude ? { sway: { amplitude, phase: index * 1.73 + object.tileX * .71 + object.tileY * 1.13 } } : {};
+};
+/** Throttled invalidate for ambient motion; direct interaction still calls invalidate() at full rate. */
+const RequestFrame = createContext<() => void>(() => undefined);
+/** Fixed mount point for every Html label. Without it drei re-attaches labels once R3F connects events, and that remount can leave a label empty. */
+const LabelPortal = createContext<RefObject<HTMLElement> | undefined>(undefined);
+function Label(props: ComponentProps<typeof Html>) { return <Html portal={useContext(LabelPortal)} {...props}/>; }
 
 function CameraRig({ command, interactionActive }: { command: Command; interactionActive: boolean }) {
   const { camera, size, invalidate } = useThree();
@@ -78,18 +94,6 @@ function CameraRig({ command, interactionActive }: { command: Command; interacti
     screenSpacePanning minZoom={18} maxZoom={110}
     mouseButtons={{ LEFT: 2, MIDDLE: 1, RIGHT: 2 }} touches={{ ONE: 1, TWO: 2 }}
   />;
-}
-
-function AmbientObject({ object, person, index, active }: { object: LandObject; person: Person; index: number; active: boolean }) {
-  const ref = useRef<Group>(null);
-  const { invalidate } = useThree();
-  const offset = useMemo(() => index * 1.73 + object.tileX * .71 + object.tileY * 1.13, [index, object]);
-  useFrame(({ clock }) => {
-    if (!ref.current || !active || !(object.modelId.startsWith("tree.") || ["bush", "flowers"].includes(object.modelId))) return;
-    ref.current.rotation.z = Math.sin(clock.elapsedTime * .34 + offset) * (object.modelId.startsWith("tree.") ? .012 : .007);
-    invalidate();
-  });
-  return <group ref={ref}><LandObjectInstance object={object} person={person}/></group>;
 }
 
 function CharacterPuff({ active }: { active: boolean }) {
@@ -125,6 +129,8 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
   const bubble = useRef<HTMLButtonElement>(null);
   const bubbleScale = useRef(0);
   const { invalidate } = useThree();
+  const clock = useThree((state) => state.clock);
+  const requestFrame = useContext(RequestFrame);
   const seed = useMemo(() => [...person.id].reduce((total, char) => total + char.charCodeAt(0), 0), [person.id]);
   const initialWanderDelay = useMemo(() => randomWanderDelay(true), [person.id]);
   const motion = useRef({
@@ -135,6 +141,7 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
   });
   const lastLanding = useRef(landingPulse);
   const landingAt = useRef(-10);
+  const lastFrame = useRef(0);
   const [bubbleExpanded, setBubbleExpanded] = useState(false);
   const placementKey = `${placement.landId}:${placement.tileX},${placement.tileY}`;
 
@@ -145,7 +152,7 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
     root.current?.position.set(x, 0, z);
     if (body.current) body.current.rotation.y = .28;
   }, [placementKey]);
-  useFrame(({ clock, camera, size }) => {
+  useFrame(({ camera, size }) => {
     if (bubble.current) {
       const scale = Math.min(1, (camera as OrthographicCamera).zoom / resetZoom(size));
       if (Math.abs(scale - bubbleScale.current) > .001) {
@@ -157,6 +164,8 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
     const character = body.current;
     if (!group || !character || dragging) return;
     const now = clock.elapsedTime;
+    const step = Math.min(.12, Math.max(0, now - lastFrame.current));
+    lastFrame.current = now;
     if (landingPulse !== lastLanding.current) { lastLanding.current = landingPulse; landingAt.current = now; }
     const state = motion.current;
     if (motionActive && !placement.temporary) {
@@ -179,24 +188,26 @@ function CharacterActor({ person, placement, blocked, otherOccupants, motionActi
         if (progress >= 1) { state.moving = false; state.nextAt = now + randomWanderDelay(); }
       }
       const look = !state.moving && Math.sin(now * .21 + seed) > .83 ? Math.sin(now * .7 + seed) * .18 : 0;
-      character.rotation.y = MathUtils.lerp(character.rotation.y, state.heading + look, .025);
-      invalidate();
+      // Time-based turn (≈ the old 2.5%-per-frame at 60fps), so it looks the same at any frame rate.
+      character.rotation.y = MathUtils.damp(character.rotation.y, state.heading + look, 1.5, step);
+      if (state.moving) requestFrame();
     } else character.position.y = 0;
     const landingT = now - landingAt.current;
     const landing = landingT >= 0 && landingT < .42 ? Math.sin((landingT / .42) * Math.PI) * .065 : 0;
     const breathing = motionActive ? 1 + Math.sin(now * .82 + seed) * .012 : 1;
     character.scale.set(breathing + landing, breathing - landing * .25, breathing + landing);
-    if (motionActive || landingT < .42) invalidate();
+    if (landingT < .42) invalidate();
   });
 
   return <group ref={root} name={`character-${person.id}`} position={[placement.tileX + .5, 0, placement.tileY + .5]}
     onPointerDown={(event) => root.current && onPointerDown(event, person, root.current)}>
-    <mesh position={[0, .015, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+    <mesh position={[0, .015, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast} layers={CHARACTER_LAYER}>
       <circleGeometry args={[.3, 28]}/><meshBasicMaterial color="#455648" transparent opacity={dragging ? .1 : .18}/>
     </mesh>
-    <group ref={body}><CharacterModel person={person}/></group>
-    {person.bubble&&<Html position={[0,person.species==='rabbit'?1.27:person.species==='turtle'?.92:1.13,0]} zIndexRange={[35,15]} transform={false}><div className="space3d-bubble-anchor"><button ref={bubble} className={`space3d-bubble ${bubbleExpanded?"expanded":""}`} aria-expanded={bubbleExpanded} onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();setBubbleExpanded(value=>!value);}}>{person.bubble}</button></div></Html>}
-    {showName && <Html position={[0, -.17, 0]} center zIndexRange={[36, 16]}><div className="character-name-label">{person.nickname}</div></Html>}
+    <mesh visible={false} position={[0, .45, 0]}><boxGeometry args={[.6, .9, .6]}/></mesh>
+    <group ref={body}><Baked cacheKey={`character:${appearanceKey(person)}`} lit={false} raycast={noRaycast} layers={CHARACTER_LAYER}><CharacterModel person={person}/></Baked></group>
+    {person.bubble&&<Label position={[0,person.species==='rabbit'?1.27:person.species==='turtle'?.92:1.13,0]} zIndexRange={[35,15]} transform={false}><div className="space3d-bubble-anchor"><button ref={bubble} className={`space3d-bubble ${bubbleExpanded?"expanded":""}`} aria-expanded={bubbleExpanded} onPointerDown={event=>event.stopPropagation()} onPointerUp={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();setBubbleExpanded(value=>!value);}}>{person.bubble}</button></div></Label>}
+    {showName && <Label position={[0, -.17, 0]} center zIndexRange={[36, 16]}><div className="character-name-label">{person.nickname}</div></Label>}
     <CharacterPuff active={returning}/>
   </group>;
 }
@@ -217,33 +228,36 @@ function LandSign({ person, arranging, onFocus }: { person: Person; arranging: b
   return <group position={[sign.tileX+.5,0,signModelZ(sign)]} rotation={[0,Math.PI/4,0]}
     onPointerDown={interactive?event=>event.stopPropagation():undefined}
     onClick={interactive?event=>{event.stopPropagation();onFocus();}:undefined}>
-    <LandSignModel nickname={person.nickname}/>
-    {person.owner&&<Html position={[0,.94,.12]} center transform={false} zIndexRange={[8,5]}><span ref={ownerLabel} className="owner-land-label">You</span></Html>}
-    <Html position={[0,.53,.11]} center zIndexRange={[4,1]}>
+    <Baked cacheKey="sign-boards" material={signMaterial} renderOrder={20}><SignBoards/></Baked>
+    <SignText nickname={person.nickname}/>
+    {person.owner&&<Label position={[0,.94,.12]} center transform={false} zIndexRange={[8,5]}><span ref={ownerLabel} className="owner-land-label">You</span></Label>}
+    <Label position={[0,.53,.11]} center zIndexRange={[4,1]}>
       {person.owner?<span className="space3d-accessible" aria-label={`${person.nickname}'s home`}/>:<button className="space3d-accessible" tabIndex={arranging?-1:0} onClick={onFocus} aria-label={`Focus ${person.nickname}'s land`}/>}
-    </Html>
+    </Label>
   </group>;
 }
 
+/** Whole arrange grid in two draws: one mesh for the tiles, one line set for the outlines. */
 function ArrangementGrid({ people }: { people: Person[] }) {
-  const blocks = useMemo(() => {
+  const geometry = useMemo(() => {
     const xs = people.map((person) => person.plotX);
     const ys = people.map((person) => person.plotY);
     const minX = Math.min(...xs, 0) - 2, maxX = Math.max(...xs, 0) + 2;
     const minY = Math.min(...ys, 0) - 2, maxY = Math.max(...ys, 0) + 2;
-    return Array.from({ length: (maxX - minX + 1) * (maxY - minY + 1) }, (_, index) => ({
-      x: minX + index % (maxX - minX + 1), y: minY + Math.floor(index / (maxX - minX + 1)),
-    }));
+    const tiles: number[] = [], lines: number[] = [];
+    for (let blockY = minY; blockY <= maxY; blockY++) for (let blockX = minX; blockX <= maxX; blockX++) {
+      const x = blockX * PLOT_TILES, z = blockY * PLOT_TILES, near = .09, far = PLOT_TILES - .09;
+      tiles.push(x + near, -.035, z + near, x + near, -.035, z + far, x + far, -.035, z + far, x + near, -.035, z + near, x + far, -.035, z + far, x + far, -.035, z + near);
+      lines.push(x, .01, z, x + 5, .01, z, x + 5, .01, z, x + 5, .01, z + 5, x + 5, .01, z + 5, x, .01, z + 5, x, .01, z + 5, x, .01, z);
+    }
+    const make = (values: number[]) => new BufferGeometry().setAttribute("position", new BufferAttribute(new Float32Array(values), 3));
+    return { tiles: make(tiles), lines: make(lines) };
   }, [people]);
-  return <group>{blocks.map((block) => {
-    const x = block.x * PLOT_TILES, z = block.y * PLOT_TILES;
-    return <group key={`${block.x},${block.y}`}>
-      <mesh position={[x + 2.5, -.035, z + 2.5]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[4.82, 4.82]}/><meshBasicMaterial color="#f8fdff" transparent opacity={.055} depthWrite={false}/>
-      </mesh>
-      <Line points={[[x, .01, z], [x + 5, .01, z], [x + 5, .01, z + 5], [x, .01, z + 5], [x, .01, z]]} color="#eefbff" transparent opacity={.48} lineWidth={1}/>
-    </group>;
-  })}</group>;
+  useEffect(() => () => { geometry.tiles.dispose(); geometry.lines.dispose(); }, [geometry]);
+  return <group>
+    <mesh geometry={geometry.tiles}><meshBasicMaterial color="#f8fdff" transparent opacity={.055} depthWrite={false}/></mesh>
+    <lineSegments geometry={geometry.lines}><lineBasicMaterial color="#eefbff" transparent opacity={.48}/></lineSegments>
+  </group>;
 }
 
 function LandGhost({ preview }: { preview: LandPreview }) {
@@ -273,11 +287,21 @@ function DropIndicator({ placement, people, valid }: { placement: CharacterPlace
   </group>;
 }
 
-function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, sideGeometry, arranging, suspendPosition,
-  motionActive, characters, blockedByLand, allPlacements, activeCharacterId, labelId, returning, landingPulses,
+/** Ground slab, only ever rendered into the land's baked mesh. The top is subdivided so baked shadows have vertices to land on. */
+function LandBase({ ground }: { ground: Person["ground"] }) {
+  return <>
+    <mesh position={[2.5, 0, 2.5]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow userData={{ shadowGrid: true }}>
+      <planeGeometry args={[PLOT_TILES, PLOT_TILES, 20, 20]}/><meshStandardMaterial color={palette[ground]}/>
+    </mesh>
+    <mesh position={[2.5, -TERRAIN_DEPTH / 2 - .002, 2.5]}>
+      <boxGeometry args={[PLOT_TILES, TERRAIN_DEPTH, PLOT_TILES]}/><meshStandardMaterial color={sidePalette[ground]}/>
+    </mesh>
+  </>;
+}
+
+function LandChunk({ person, arranging, suspendPosition, motionActive, characters, blockedByLand, allPlacements, activeCharacterId, labelId, returning, landingPulses,
   onLandPointerDown, onCharacterPointerDown, onCharacterClick, registerLand, onFocus }: {
-  person: Person; occupied: ReadonlySet<string>; material: MeshStandardMaterial; sideMaterial: MeshStandardMaterial;
-  planeGeometry: PlaneGeometry; sideGeometry: BoxGeometry; arranging: boolean; suspendPosition: boolean;
+  person: Person; arranging: boolean; suspendPosition: boolean;
   motionActive: boolean; characters: Person[]; blockedByLand: ReadonlyMap<string, ReadonlySet<string>>;
   allPlacements: ReadonlyMap<string, CharacterPlacement>; activeCharacterId: string | null;
   labelId: string | null;
@@ -294,25 +318,24 @@ function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, si
     if (!suspendPosition) root.current?.position.set(person.plotX * PLOT_TILES, 0, person.plotY * PLOT_TILES);
     return () => registerLand(null);
   }, [person.plotX, person.plotY, registerLand, suspendPosition]);
+  const objects = landObjectsForPerson(person);
+  const sign = signCellForPerson(person);
   const blocked = [...(blockedByLand.get(person.id) ?? [])].map((key) => {
     const [tileX, tileY] = key.split(",").map(Number);
     return { tileX, tileY };
   });
   return <group ref={root} name={`land-${person.id}`}>
-    {localTiles.map(({ tileX: x, tileY: z }) => {
-      const globalX = person.plotX * PLOT_TILES + x, globalZ = person.plotY * PLOT_TILES + z;
-      return <group key={`${x},${z}`}>
-        <mesh position={[x + .5, 0, z + .5]} rotation={[-Math.PI / 2, 0, 0]} geometry={planeGeometry} material={material}
-          receiveShadow onPointerDown={(event) => onLandPointerDown(event, person)}/>
-        {[[0, -1], [1, 0], [0, 1], [-1, 0]].map(([dx, dz], index) => !occupied.has(`${globalX + dx},${globalZ + dz}`) && (
-          <mesh key={index} geometry={sideGeometry} material={sideMaterial}
-            position={[x + .5 + dx * .5, -TERRAIN_DEPTH / 2, z + .5 + dz * .5]}
-            rotation={[0, dx ? Math.PI / 2 : 0, 0]} castShadow receiveShadow/>
-        ))}
-      </group>;
-    })}
-    <GroundDetailsModel/>
-    {landObjectsForPerson(person).map((object, index) => <AmbientObject key={object.id} object={object} person={person} index={index} active={motionActive}/>)}
+    {/* Everything static on the land becomes one mesh with lighting and shadows baked in. */}
+    <Baked cacheKey={`land:${JSON.stringify([person.ground, person.houseColor, sign, objects])}`} shadows raycast={noRaycast}>
+      <LandBase ground={person.ground}/>
+      <GroundDetailsModel/>
+      {objects.map((object, index) => <group key={object.id} userData={swayFor(object, index)}><LandObjectInstance object={object} person={person}/></group>)}
+      <group position={[sign.tileX + .5, 0, signModelZ(sign)]} rotation={[0, Math.PI / 4, 0]}><SignPosts/></group>
+    </Baked>
+    {/* Cheap hit box so pointer events never raycast the baked land's triangles. */}
+    <mesh visible={false} position={[2.5, .75, 2.5]} onPointerDown={(event) => onLandPointerDown(event, person)}>
+      <boxGeometry args={[PLOT_TILES, 1.5, PLOT_TILES]}/>
+    </mesh>
     {characters.map((character) => {
       const placement = allPlacements.get(character.id)!;
       const otherOccupants = [...allPlacements.entries()].filter(([id, item]) => id !== character.id && item.landId === person.id)
@@ -327,12 +350,15 @@ function LandChunk({ person, occupied, material, sideMaterial, planeGeometry, si
 }
 
 function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, selectedId, onPeopleChange, onCharacterClick,
-  command, temporary, returning, onTemporaryDrop, onFocus }: Props & {
+  command, temporary, returning, onTemporaryDrop, onFocus, perf, labelPortal }: Props & {
   command: Command; temporary: CharacterMap; returning: ReadonlySet<string>;
-  onTemporaryDrop: (id: string, placement: CharacterPlacement) => void; onFocus: (person: Person) => void;
+  onTemporaryDrop: (id: string, placement: CharacterPlacement) => void; onFocus: (person: Person) => void; perf: PerfStats | null;
+  labelPortal: RefObject<HTMLElement>;
 }) {
-  const { gl, invalidate } = useThree();
+  const { gl, invalidate, camera, raycaster } = useThree();
+  useEffect(() => { camera.layers.enable(CHARACTER_LAYER); raycaster.layers.enable(CHARACTER_LAYER); invalidate(); }, [camera, raycaster, invalidate]);
   const motionAllowed = useMotionAllowed();
+  const motionActive = motionAllowed && !motionPaused && !arrangeMode;
   const landGroups = useRef(new Map<string, Group>());
   const landDrag = useRef<LandDrag | null>(null);
   const characterDrag = useRef<CharacterDrag | null>(null);
@@ -346,18 +372,26 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
   const [labelId, setLabelId] = useState<string | null>(null);
   const [landingPulses, setLandingPulses] = useState<Record<string, number>>({});
   const labelTimer = useRef<number | null>(null);
+  const frameTimer = useRef(0);
+  const idleTimer = useRef(0);
 
-  const materials = useMemo(() => Object.fromEntries(Object.entries(palette).map(([key, color]) => [key, new MeshStandardMaterial({ color, roughness: .94 })])) as Record<Person["ground"], MeshStandardMaterial>, []);
-  const sideMaterials = useMemo(() => Object.fromEntries(Object.entries(sidePalette).map(([key, color]) => [key, new MeshStandardMaterial({ color, roughness: 1 })])) as Record<Person["ground"], MeshStandardMaterial>, []);
-  const planeGeometry = useMemo(() => new PlaneGeometry(1, 1), []);
-  const sideGeometry = useMemo(() => new BoxGeometry(1, TERRAIN_DEPTH, .025), []);
-  useEffect(() => () => {
-    Object.values(materials).forEach((material) => material.dispose());
-    Object.values(sideMaterials).forEach((material) => material.dispose());
-    planeGeometry.dispose(); sideGeometry.dispose();
-  }, [materials, sideMaterials, planeGeometry, sideGeometry]);
+  // Called from inside a frame, so waiting one interval from the call caps ambient motion at ~60fps.
+  const requestFrame = useCallback(() => {
+    if (frameTimer.current) return;
+    frameTimer.current = window.setTimeout(() => { frameTimer.current = 0; invalidate(); }, AMBIENT_FRAME_MS);
+  }, [invalidate]);
+  useEffect(() => () => window.clearTimeout(frameTimer.current), []);
+  // While motion is on, every frame books an idle frame IDLE_FRAME_MS later. Walks and gestures render sooner and push
+  // it back, so breathing and canopy sway never stop and a world with nothing walking still renders at ~10fps.
+  useEffect(() => { if (motionActive) invalidate(); return () => window.clearTimeout(idleTimer.current); }, [motionActive, invalidate]);
+  useFrame(({ gl }, delta) => {
+    if (perf) { perf.frames.push(performance.now()); perf.calls = gl.info.render.calls; perf.triangles = gl.info.render.triangles; }
+    window.clearTimeout(idleTimer.current);
+    if (!motionActive) return;
+    swayTime.value += Math.min(delta, .12);
+    idleTimer.current = window.setTimeout(invalidate, IDLE_FRAME_MS);
+  });
 
-  const occupiedByLand = useMemo(() => new Map(people.map(person=>[person.id,terrainOccupancyForLand(people,person.id,visualLandId)])), [people,visualLandId]);
   const blockedByLand = useMemo(() => new Map(people.map((person) => [person.id, blockedLandCells(person)])), [people]);
   const effectivePlacements = useMemo(() => new Map(people.map((person) => [person.id,
     temporary[person.id] ?? { landId: person.id, ...characterCellForPerson(person) },
@@ -504,20 +538,18 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
     const maxZ = Math.max(...people.map((person) => (person.plotY + 1) * PLOT_TILES));
     return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, scale: Math.max(14, maxX - minX + 4, maxZ - minZ + 4) };
   }, [people]);
+  const layoutKey = people.map((person) => `${person.id}:${person.plotX},${person.plotY}`).join("|");
 
-  return <>
+  return <LabelPortal.Provider value={labelPortal}><RequestFrame.Provider value={requestFrame}>
     <CameraRig command={command} interactionActive={interactionActive}/>
-    <ambientLight intensity={.28}/><hemisphereLight args={["#fff8e9", "#aab99e", 1.5]}/>
-    <directionalLight position={[-6, 14, 9]} intensity={2.7} color="#fff0d7" castShadow shadow-mapSize={[2048, 2048]}
-      shadow-camera-left={-18} shadow-camera-right={18} shadow-camera-top={18} shadow-camera-bottom={-18}
-      shadow-normalBias={.025} shadow-bias={-.00015}/>
+    <ambientLight color={LIGHTS.ambient.color} intensity={LIGHTS.ambient.intensity}/>
+    <hemisphereLight args={[LIGHTS.hemisphere.sky, LIGHTS.hemisphere.ground, LIGHTS.hemisphere.intensity]}/>
+    <directionalLight position={LIGHTS.sun.position} intensity={LIGHTS.sun.intensity} color={LIGHTS.sun.color}/>
     {arrangeMode && <ArrangementGrid people={people}/>}
     <group onPointerMove={onPointerMove} onPointerUp={onPointerUp}
       onPointerCancel={(event) => { releaseCapture(event); cancelLandDrag(); cancelCharacterDrag(); }}>
-      {people.map((person) => <LandChunk key={person.id} person={person} occupied={occupiedByLand.get(person.id)!}
-        material={materials[person.ground]} sideMaterial={sideMaterials[person.ground]}
-        planeGeometry={planeGeometry} sideGeometry={sideGeometry} arranging={arrangeMode}
-        suspendPosition={visualLandId === person.id} motionActive={motionAllowed && !motionPaused && !arrangeMode}
+      {people.map((person) => <LandChunk key={person.id} person={person} arranging={arrangeMode}
+        suspendPosition={visualLandId === person.id} motionActive={motionActive}
         characters={peopleByLand.get(person.id) ?? []} blockedByLand={blockedByLand} allPlacements={effectivePlacements}
         activeCharacterId={activeCharacterId} labelId={labelId} returning={returning} landingPulses={landingPulses}
         onLandPointerDown={onLandPointerDown} onCharacterPointerDown={onCharacterPointerDown}
@@ -525,7 +557,8 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
         registerLand={(group) => group ? landGroups.current.set(person.id, group) : landGroups.current.delete(person.id)}
         onFocus={() => onFocus(person)}/>)}
     </group>
-    <ContactShadows position={[bounds.x, .01, bounds.z]} scale={bounds.scale} opacity={.24} blur={2.2} far={3.2} resolution={512} frames={1} color="#6d6655"/>
+    {/* Rendered once per layout; frames={1} would otherwise keep the shadows of the first arrangement. */}
+    <ContactShadows key={layoutKey} position={[bounds.x, .01, bounds.z]} scale={bounds.scale} opacity={.24} blur={2.2} far={3.2} resolution={512} frames={1} color="#6d6655"/>
     {landPreview && <LandGhost preview={landPreview}/>} {dropPreview && <DropIndicator placement={dropPreview.placement} people={people} valid={dropPreview.valid}/>}
     {people.map((person) => {
       const placement = effectivePlacements.get(person.id)!;
@@ -533,10 +566,10 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
       if (!land) return null;
       const position: [number, number, number] = [land.plotX * PLOT_TILES + placement.tileX + .5, 1.18, land.plotY * PLOT_TILES + placement.tileY + .5];
       return <group key={`overlay-${person.id}`}>
-        <Html position={[position[0], .3, position[2]]} center zIndexRange={[2, 1]}><button className="space3d-accessible" aria-label={`Open ${person.nickname}'s card`} onClick={() => onCharacterClick(person)}>Open {person.nickname}&apos;s card</button></Html>
+        <Label position={[position[0], .3, position[2]]} center zIndexRange={[2, 1]}><button className="space3d-accessible" aria-label={`Open ${person.nickname}'s card`} onClick={() => onCharacterClick(person)}>Open {person.nickname}&apos;s card</button></Label>
       </group>;
     })}
-  </>;
+  </RequestFrame.Provider></LabelPortal.Provider>;
 }
 
 export default function World3D(props: Props) {
@@ -546,6 +579,18 @@ export default function World3D(props: Props) {
   const [returning, setReturning] = useState<Set<string>>(new Set());
   const timers = useRef<CharacterReturnTimers | null>(null);
   const transitionTimers = useRef<number[]>([]);
+  // `?perf` shows frames rendered in the last second plus the last frame's draw calls and triangles.
+  const perf = useMemo<PerfStats | null>(() => new URLSearchParams(window.location.search).has("perf") ? { frames: [], calls: 0, triangles: 0 } : null, []);
+  const perfReadout = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!perf) return;
+    const id = window.setInterval(() => {
+      const now = performance.now();
+      perf.frames = perf.frames.filter((time) => now - time < 1000);
+      if (perfReadout.current) perfReadout.current.textContent = `${perf.frames.length} fps · ${perf.calls} draws · ${perf.triangles.toLocaleString()} tris`;
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [perf]);
 
   useEffect(() => {
     timers.current = new CharacterReturnTimers((id) => {
@@ -593,11 +638,12 @@ export default function World3D(props: Props) {
     <div className="sky-haze"/>
     <div className="cloud cloud-a"/><div className="cloud cloud-b"/><div className="cloud cloud-c"/>
     <div className="cloud cloud-d"/><div className="cloud cloud-e"/><div className="cloud cloud-f"/>
-    <div className="world3d-scene"><Canvas orthographic camera={{ position: [17, CAMERA_OFFSET[1], 17], near: .1, far: 100, zoom: 50 }} shadows={{ type: PCFShadowMap }}
-      eventSource={eventSource as RefObject<HTMLElement>} eventPrefix="client" dpr={[1, 1.6]} frameloop="demand" gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}>
-      <Scene {...props} command={command} temporary={temporary} returning={returning} onTemporaryDrop={onTemporaryDrop}
+    <div className="world3d-scene"><Canvas orthographic camera={{ position: [17, CAMERA_OFFSET[1], 17], near: .1, far: 100, zoom: 50 }}
+      eventSource={eventSource as RefObject<HTMLElement>} eventPrefix="client" dpr={[1, 1.6]} frameloop="demand" gl={{ antialias: true, alpha: true }}>
+      <Scene {...props} command={command} temporary={temporary} returning={returning} onTemporaryDrop={onTemporaryDrop} perf={perf} labelPortal={eventSource as RefObject<HTMLElement>}
         onFocus={(person) => setCommand((current) => ({ id: current.id + 1, kind: "focus", person }))}/>
     </Canvas></div>
+    {perf && <div ref={perfReadout} style={{ position: "absolute", left: 16, top: 96, zIndex: 60, padding: "4px 8px", borderRadius: 8, background: "rgba(255,255,255,.85)", font: "600 12px ui-monospace, monospace", pointerEvents: "none" }}/>}
     <div className="zoom-controls">
       <button aria-label="Zoom out" onClick={() => setCommand((current) => ({ id: current.id + 1, kind: "zoom", amount: .85 }))}><Minus size={18}/></button>
       <button aria-label="Reset view" onClick={() => setCommand((current) => ({ id: current.id + 1, kind: "reset" }))}><RotateCcw size={16}/></button>

@@ -1,12 +1,14 @@
 "use client";
 
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, createRoot, extend, useFrame, useThree, type ReconcilerRoot } from "@react-three/fiber";
 import { ContactShadows, OrbitControls } from "@react-three/drei";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import * as THREE from "three";
 import { Group, OrthographicCamera, PCFShadowMap } from "three";
 import type { Person } from "@/lib/types";
 import { TERRAIN_DEPTH } from "@/lib/render3d";
-import { useMotionAllowed } from "@/lib/motion";
+import { IDLE_FRAME_MS, useMotionAllowed } from "@/lib/motion";
+import { appearanceKey } from "@/lib/customization";
 import { characterCellForPerson, landObjectsForPerson, signCellForPerson, signModelZ } from "@/lib/land-objects";
 import { CharacterModel, GroundDetailsModel } from "./PlaneModels";
 import { LandObjectInstance } from "./LandObjects3D";
@@ -29,9 +31,18 @@ function ResponsiveCamera({kind}:{kind:"character"|"land"}) {
   return null;
 }
 
-function PortraitCamera() {
-  const {camera,invalidate}=useThree();
-  useEffect(()=>{camera.lookAt(0,.18,0);camera.updateProjectionMatrix();invalidate();},[camera,invalidate]);
+/**
+ * The character preview renders on demand but keeps breathing: idle frames at ~10fps, dragging at full rate.
+ * ponytail: the land preview stays still; ~400 unbaked draws a frame is too much to spend on a tiny breathing animal.
+ */
+function IdleFrames() {
+  const invalidate = useThree((state) => state.invalidate);
+  const motionAllowed = useMotionAllowed();
+  useEffect(() => {
+    if (!motionAllowed) return;
+    const timer = window.setInterval(invalidate, IDLE_FRAME_MS);
+    return () => window.clearInterval(timer);
+  }, [invalidate, motionAllowed]);
   return null;
 }
 
@@ -49,8 +60,8 @@ function IdleCharacter({ person, large = false }: { person: Person; large?: bool
 
 export function CharacterPreview3D({ person }: { person: Person }) {
   return <div className="three-preview character-preview" aria-label="Live 3D Character preview">
-    <Canvas orthographic camera={{ position: [4.8, 3.7, 5.8], zoom: 180, near: .1, far: 40 }} shadows={{ type: PCFShadowMap }} dpr={[1, 1.6]}>
-      <color attach="background" args={["#bfe8ff"]}/><Lights/><ResponsiveCamera kind="character"/>
+    <Canvas frameloop="demand" orthographic camera={{ position: [4.8, 3.7, 5.8], zoom: 180, near: .1, far: 40 }} shadows={{ type: PCFShadowMap }} dpr={[1, 1.6]}>
+      <color attach="background" args={["#bfe8ff"]}/><Lights/><ResponsiveCamera kind="character"/><IdleFrames/>
       <group position={[0, -.5, 0]}><IdleCharacter person={person} large/><ContactShadows position={[0, .02, 0]} opacity={.3} scale={3.2} blur={2.4} far={2}/></group>
       <OrbitControls enablePan={false} enableZoom={false} minPolarAngle={Math.PI / 3.1} maxPolarAngle={Math.PI / 2.25} target={[0,.25,0]}/>
     </Canvas>
@@ -58,15 +69,77 @@ export function CharacterPreview3D({ person }: { person: Person }) {
   </div>;
 }
 
-/** Static, world-model portrait for compact UI surfaces. */
+// Small avatars are still images. One shared offscreen renderer draws each look once, so a long friend list
+// holds no live WebGL canvases (browsers keep only ~16 per page, fewer on phones).
+const SNAPSHOT_PX = 192;
+const FRAMINGS = {
+  // The old live header portrait: 50px box at zoom 43.
+  portrait: { camera: [2, 2.7, 5.8], target: [0, .18, 0], view: 50 / 43, groupY: -.42, scale: 1.2, ambient: 1.45, sky: "#fff7e7", hemisphere: 1.25, sun: [-4, 7, 6], sunIntensity: 2, blob: false },
+  // The old live friend-row preview (CharacterPreview3D framing, sized to the box width).
+  tile: { camera: [4.8, 3.7, 5.8], target: [0, .25, 0], view: 3.15, groupY: -.5, scale: 1.7, ambient: 1.35, sky: "#dff3ff", hemisphere: 1.15, sun: [-5, 9, 5], sunIntensity: 2.1, blob: true },
+} as const;
+type Framing = keyof typeof FRAMINGS;
+let snapshotRoot: ReconcilerRoot<HTMLCanvasElement> | null = null;
+let snapshotQueue: Promise<unknown> = Promise.resolve();
+const snapshots = new Map<string, Promise<string>>();
+
+function SnapshotScene({ person, framing, onReady }: { person: Person; framing: Framing; onReady: () => void }) {
+  const look = FRAMINGS[framing];
+  useLayoutEffect(onReady, [onReady]);
+  return <>
+    <ambientLight intensity={look.ambient}/><hemisphereLight args={[look.sky, "#8d765f", look.hemisphere]}/><directionalLight position={[...look.sun]} intensity={look.sunIntensity}/>
+    <group position={[0, look.groupY, 0]}>
+      {look.blob && <mesh position={[0, .02, 0]} rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[.55, 32]}/><meshBasicMaterial color="#3d5a4a" transparent opacity={.16} depthWrite={false}/></mesh>}
+      <group scale={look.scale}><CharacterModel person={person}/></group>
+    </group>
+  </>;
+}
+
+async function renderSnapshot(person: Person, framing: Framing) {
+  const look = FRAMINGS[framing];
+  if (!snapshotRoot) {
+    extend(THREE as never); // <Canvas> registers three's classes; this root renders outside any Canvas.
+    snapshotRoot = createRoot(document.createElement("canvas"));
+  }
+  const root = snapshotRoot;
+  await root.configure({ frameloop: "never", orthographic: true, dpr: 1, size: { width: SNAPSHOT_PX, height: SNAPSHOT_PX, top: 0, left: 0 },
+    camera: { near: .1, far: 40 }, gl: { alpha: true, antialias: true, preserveDrawingBuffer: true } });
+  let store: ReturnType<typeof root.render> | undefined;
+  await new Promise<void>((resolve) => { store = root.render(<SnapshotScene key={framing + appearanceKey(person)} person={person} framing={framing} onReady={resolve}/>); });
+  const { gl, scene, camera } = store!.getState();
+  const ortho = camera as OrthographicCamera;
+  ortho.position.fromArray(look.camera); ortho.zoom = SNAPSHOT_PX / look.view; ortho.lookAt(look.target[0], look.target[1], look.target[2]); ortho.updateProjectionMatrix();
+  gl.render(scene, ortho);
+  return gl.domElement.toDataURL("image/png");
+}
+
+/** Image URL for this Character's look, rendered once and shared by every component that asks. */
+function useSnapshot(person: Person, framing: Framing) {
+  const key = `${framing}:${appearanceKey(person)}`;
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    let live = true;
+    if (!snapshots.has(key)) {
+      const next = snapshotQueue.then(() => renderSnapshot(person, framing));
+      snapshotQueue = next.catch(() => undefined);
+      snapshots.set(key, next);
+    }
+    snapshots.get(key)!.then((value) => { if (live) setUrl(value); }, () => undefined);
+    return () => { live = false; };
+  }, [key]); // key covers every field that changes the picture
+  return url;
+}
+
+/** Header avatar. */
 export function CharacterPortrait3D({ person }: { person: Person }) {
-  return <div className="character-portrait-3d" aria-hidden="true">
-    <Canvas orthographic frameloop="demand" camera={{ position: [2, 2.7, 5.8], zoom: 43, near: .1, far: 30 }} dpr={[1, 1.5]}>
-      <PortraitCamera/>
-      <ambientLight intensity={1.45}/><hemisphereLight args={["#fff7e7", "#8d765f", 1.25]}/><directionalLight position={[-4, 7, 6]} intensity={2}/>
-      <group position={[0,-.42,0]} scale={1.2}><CharacterModel person={person}/></group>
-    </Canvas>
-  </div>;
+  const url = useSnapshot(person, "portrait");
+  return <div className="character-portrait-3d" aria-hidden="true">{url && <img src={url} alt="" style={{ display: "block", width: "100%", height: "100%" }}/>}</div>;
+}
+
+/** Friend-list avatar, framed like the live preview it replaces. */
+export function CharacterTile({ person }: { person: Person }) {
+  const url = useSnapshot(person, "tile");
+  return <div className="three-preview character-preview" aria-hidden="true">{url && <img src={url} alt="" style={{ display: "block", width: "100%", height: "100%" }}/>}</div>;
 }
 
 function Land({ person }: { person: Person }) {
@@ -92,7 +165,7 @@ function Land({ person }: { person: Person }) {
 
 export function LandPreview3D({ person }: { person: Person }) {
   return <div className="three-preview land-preview" aria-label="Live 5 by 5 land preview">
-    <Canvas orthographic camera={{ position: [8.7, 8.2, 9.5], zoom: 80, near: .1, far: 60 }} shadows={{ type: PCFShadowMap }} dpr={[1, 1.5]}>
+    <Canvas frameloop="demand" orthographic camera={{ position: [8.7, 8.2, 9.5], zoom: 80, near: .1, far: 60 }} shadows={{ type: PCFShadowMap }} dpr={[1, 1.5]}>
       <color attach="background" args={["#bfe8ff"]}/><Lights/><ResponsiveCamera kind="land"/><Land person={person}/><ContactShadows position={[0,-.46,0]} opacity={.2} scale={10} blur={3} far={4}/>
       <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0,.95,0]}/>
     </Canvas>

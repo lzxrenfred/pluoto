@@ -16,7 +16,6 @@
 .motion-bubble { animation:bubble-arrive 240ms ease-out; transition:opacity 240ms ease; }
 .motion-bubble.is-leaving { opacity:0; }
 .motion-bubble span { display:block; animation:bubble-content 240ms ease-out; }
-.cloud { animation-duration:65s; }
 .motion-paused .inhabitant-pose svg,.motion-paused .iso-tree em,.motion-paused .cloud { animation-play-state:paused; }
 @keyframes quiet-breath { 0%,35%,100%{transform:scaleY(1)} 55%{transform:scaleY(1.015)} }
 @keyframes canopy-sway { 0%,35%,100%{transform:rotate(0)} 60%{transform:rotate(1.2deg)} 80%{transform:rotate(-.5deg)} }
