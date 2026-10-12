@@ -1,7 +1,7 @@
 // Measures render cost of a static build in headless Chrome: draw calls, triangles and frames per second,
 // plus main-thread and total Chrome CPU, for a seeded four-land world in local (no Supabase) mode.
-//   npm run build && npx serve out -l 4173 &
-//   node scripts/measure-render.mjs http://127.0.0.1:4173/
+//   pnpm build && pnpm dlx serve out -l 4173 &
+//   pnpm measure http://127.0.0.1:4173/
 // Env: CHROME (binary path), MEASURE_SECONDS (window per scenario, default 10).
 import { spawn, execSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";

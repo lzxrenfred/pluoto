@@ -1,10 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ComponentRef, type RefObject } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { ContactShadows, Html, Line, OrbitControls } from "@react-three/drei";
 import { BufferAttribute, BufferGeometry, Group, MathUtils, MeshBasicMaterial, OrthographicCamera, Plane, Vector3 } from "three";
-import type { OrbitControls as Controls } from "three-stdlib";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import type { LandObject, Person } from "@/lib/types";
 import { isSlotFree, PLOT_TILES, type PlotPosition, type TilePosition } from "@/lib/world";
@@ -69,7 +68,7 @@ function Label(props: ComponentProps<typeof Html>) { return <Html portal={useCon
 
 function CameraRig({ command, interactionActive }: { command: Command; interactionActive: boolean }) {
   const { camera, size, invalidate } = useThree();
-  const ref = useRef<Controls>(null);
+  const ref = useRef<ComponentRef<typeof OrbitControls>>(null);
   const appliedCommand = useRef(-1);
   useEffect(() => {
     if (appliedCommand.current === command.id) return;

@@ -5,8 +5,8 @@ Pluoto turns friendships into a small living world in the clouds — **“My peo
 ## Run locally
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open `http://127.0.0.1:3000`. A new local Plane enters the world-based onboarding flow; existing demo Plane URLs continue to open without destructive migration.
@@ -41,8 +41,8 @@ The browser uses persistence adapters so the same world can run against Supabase
 ## Verification
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm build
 ```
 
 Grid tests cover exact alignment and uniqueness for 1, 5, 10, and 25 Plots.
@@ -57,7 +57,7 @@ The active Plane uses one React Three Fiber canvas. `lib/render3d.ts` maps uncha
 
 Models are still authored as JSX primitives in `components/PlaneModels.tsx`, but nothing draws them directly. `components/Baked.tsx` mounts a model once, hidden, and `lib/bake.ts` merges it into a single mesh: each land (slab, ground details, objects, sign posts) becomes one mesh with sun, sky and soft ground shadows baked into vertex colors, and its trees, bushes and flowers still sway because the bake records each vertex's lean for the vertex shader to play; each Character becomes one mesh lit live so it can turn. There is no realtime shadow map. Invisible boxes take pointer events so nothing raycasts the merged triangles. Pan, zoom, reset, Space focus, Character inspection and collision-checked arrangement remain available. The pre-3D implementation is saved in Git commit `13ebff9`; the approved single-Space R3F checkpoint is `62bfd98`.
 
-Rendering budget: about 20 draw calls and 65k triangles per frame for four lands, and no more frames than the motion on screen needs. The only live WebGL canvases are the world, the customize preview and the land editor; header and friend-list avatars are still images drawn once per look by one shared offscreen renderer. Panels over the live canvas use solid backgrounds instead of `backdrop-filter`, which re-blurred on every frame. While motion is on, breathing and canopy sway keep a ~10fps floor (`IDLE_FRAME_MS`), walking renders at ~60fps through a throttled `invalidate`, and touch, drag and camera moves render at full rate; with reduced motion, Arrange, an open card or sheet, or a hidden tab, a still world renders nothing. The character preview in onboarding and the friend card idles at the same ~10fps; land previews hold still. Add `?perf` to the URL for a live fps / draw / triangle readout, and run `npm run measure -- <served build URL>` for headless numbers (draws, triangles, frames, CPU) on a seeded four-land world.
+Rendering budget: about 20 draw calls and 65k triangles per frame for four lands, and no more frames than the motion on screen needs. The only live WebGL canvases are the world, the customize preview and the land editor; header and friend-list avatars are still images drawn once per look by one shared offscreen renderer. Panels over the live canvas use solid backgrounds instead of `backdrop-filter`, which re-blurred on every frame. While motion is on, breathing and canopy sway keep a ~10fps floor (`IDLE_FRAME_MS`), walking renders at ~60fps through a throttled `invalidate`, and touch, drag and camera moves render at full rate; with reduced motion, Arrange, an open card or sheet, or a hidden tab, a still world renders nothing. The character preview in onboarding and the friend card idles at the same ~10fps; land previews hold still. Add `?perf` to the URL for a live fps / draw / triangle readout, and run `pnpm measure <served build URL>` for headless numbers (draws, triangles, frames, CPU) on a seeded four-land world.
 
 ## Accounts, email/password and realtime setup
 
@@ -65,11 +65,11 @@ The sharing seam lives in `lib/plane-store.ts`; the account seam lives in `lib/a
 
 The smallest setup for real email delivery is:
 
-1. Link the intended Supabase project and inspect its migration history. Apply the ordered files in `supabase/migrations/` with `npx supabase db push --linked --include-all`; they establish Plane sharing, account-owned onboarding data, friend connections, tightened function grants, and the qualified secure friend-code generator. The migrations are additive/idempotent and do not reset existing users or demo data.
+1. Link the intended Supabase project and inspect its migration history. Apply the ordered files in `supabase/migrations/` with `pnpm dlx supabase db push --linked --include-all`; they establish Plane sharing, account-owned onboarding data, friend connections, tightened function grants, and the qualified secure friend-code generator. The migrations are additive/idempotent and do not reset existing users or demo data.
 2. In Authentication → Providers → Email, enable email/password sign-in and keep email confirmation enabled. Configure production SMTP before relying on delivery outside Supabase’s test allowance.
 3. Set Authentication → URL Configuration → Site URL to the production Vercel origin. Add exact callback URLs for `/auth/callback` and `/auth/recovery` for localhost, the verified Preview URL, and Production URL.
 4. Copy `.env.example` to `.env.local` and add the project URL, public publishable/anon key, and deployed HTTPS app origin. Add the same public variables to Vercel Preview and Production. Never expose a service-role key through `NEXT_PUBLIC_` or commit it.
-5. Restart `npm run dev`, create a test account, follow its confirmation link, and test a recovery link. Earlier email-OTP users should choose **Set or reset password**; Supabase recovery changes the password on the same auth user ID, preserving their profile, land and friendships.
+5. Restart `pnpm dev`, create a test account, follow its confirmation link, and test a recovery link. Earlier email-OTP users should choose **Set or reset password**; Supabase recovery changes the password on the same auth user ID, preserving their profile, land and friendships.
 
 Row Level Security limits profile editing, Character choices, owned land, Pills, arrangements, pending invitation context and per-user placement to the signed-in owner. Friend requests and friendships are readable only by their participants; security-definer RPCs enforce self-invite, block, friendship and collision rules for every mutation. The hardening migration removes PostgreSQL’s default public execute access from internal helpers and authenticated mutations. The existing Plane tables, auth user IDs and demo world are left in place.
 
