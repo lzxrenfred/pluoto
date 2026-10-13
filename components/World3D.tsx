@@ -475,7 +475,8 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
     const placement = effectivePlacements.get(person.id)!;
     const parentLand = people.find((land) => land.id === placement.landId);
     if (!parentLand) return;
-    event.stopPropagation(); capture(event);
+    // Pause camera panning from the press, not the drag threshold, or the first moves pan the world too.
+    event.stopPropagation(); capture(event); setInteractionActive(true);
     characterDrag.current = { person, group, pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY },
       original: group.position.clone(), parentLand, dragged: false, candidate: null, valid: false };
     showLabel(person.id);
@@ -547,6 +548,9 @@ function Scene({ people, arrangeMode, motionPaused = false, canPlay = true, sele
     {arrangeMode && <ArrangementGrid people={people}/>}
     <group onPointerMove={onPointerMove} onPointerUp={onPointerUp}
       onPointerCancel={(event) => { releaseCapture(event); cancelLandDrag(); cancelCharacterDrag(); }}>
+      {/* Pointer events only fire where a ray hits a mesh. This invisible floor sits under every hit box, so a drag
+          keeps moving, and its release still lands, over empty sky. */}
+      <mesh visible={false} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[2000, 2000]}/></mesh>
       {people.map((person) => <LandChunk key={person.id} person={person} arranging={arrangeMode}
         suspendPosition={visualLandId === person.id} motionActive={motionActive}
         characters={peopleByLand.get(person.id) ?? []} blockedByLand={blockedByLand} allPlacements={effectivePlacements}
